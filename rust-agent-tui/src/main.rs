@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::sync::Arc;
 use ratatui::{
     crossterm::{
         event::{
@@ -188,6 +187,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         app.setup_wizard = Some(rust_agent_tui::app::SetupWizardPanel::new());
     }
 
+    // 后台初始化 MCP 连接池（不阻塞 UI）
+    app.spawn_mcp_init();
+
     // Spinner tick 驱动：每次渲染前推进一帧
     app.spinner_state.advance_tick();
 
@@ -229,12 +231,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     // 关闭 MCP 连接池（断开所有 MCP 服务器连接，清理子进程）
     if let Some(pool) = app.mcp_pool.take() {
         tracing::info!("正在关闭 MCP 连接池...");
-        if let Ok(mut pool) = Arc::try_unwrap(pool) {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(pool.shutdown())
-            });
-            tracing::info!("MCP 连接池已关闭");
-        }
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(pool.shutdown())
+        });
+        tracing::info!("MCP 连接池已关闭");
     }
 
     // 等待最后一次 Langfuse flush 完成，防止 runtime drop 前 batcher 数据丢失

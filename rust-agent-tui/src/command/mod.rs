@@ -3,6 +3,7 @@ pub mod clear;
 pub mod compact;
 pub mod cron;
 pub mod help;
+pub mod mcp;
 pub mod history;
 pub mod login;
 pub mod loop_cmd;
@@ -20,6 +21,7 @@ pub fn default_registry() -> CommandRegistry {
     r.register(Box::new(history::HistoryCommand));
     r.register(Box::new(loop_cmd::LoopCommand));
     r.register(Box::new(cron::CronCommand));
+    r.register(Box::new(mcp::McpCommand));
     r
 }
 

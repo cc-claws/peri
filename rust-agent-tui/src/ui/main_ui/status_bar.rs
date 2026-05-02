@@ -110,6 +110,46 @@ fn render_first_row(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    // MCP 初始化进度
+    if let Some(ref rx) = app.mcp_init_rx {
+        let status = rx.borrow().clone();
+        use rust_agent_middlewares::mcp::McpInitStatus;
+        match status {
+            McpInitStatus::Initializing { connected, total } => {
+                spans.push(Span::styled(" │ ", Style::default().fg(theme::MUTED)));
+                spans.push(Span::styled(
+                    format!(" [i] MCP ({}/{})...", connected, total),
+                    Style::default().fg(theme::MUTED),
+                ));
+            }
+            McpInitStatus::Ready { total } if total > 0 => {
+                // 首次检测到 Ready 时设置 3 秒显示窗口
+                if app.mcp_ready_shown_until.get().is_none() {
+                    app.mcp_ready_shown_until.set(
+                        Some(std::time::Instant::now() + std::time::Duration::from_secs(3)),
+                    );
+                }
+                if let Some(until) = app.mcp_ready_shown_until.get() {
+                    if std::time::Instant::now() < until {
+                        spans.push(Span::styled(" │ ", Style::default().fg(theme::MUTED)));
+                        spans.push(Span::styled(
+                            format!(" [i] MCP ready ({} servers)", total),
+                            Style::default().fg(theme::SAGE),
+                        ));
+                    }
+                }
+            }
+            McpInitStatus::Failed(ref msg) => {
+                spans.push(Span::styled(" │ ", Style::default().fg(theme::MUTED)));
+                spans.push(Span::styled(
+                    format!(" [i] MCP failed: {}", msg),
+                    Style::default().fg(theme::ERROR),
+                ));
+            }
+            McpInitStatus::Pending | McpInitStatus::Ready { .. } => {}
+        }
+    }
+
     // 任务运行时长（仅在 loading 时显示）
     if app.core.loading {
         if let Some(duration) = app.get_current_task_duration() {
@@ -315,6 +355,44 @@ fn render_second_row(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     Span::styled(":关闭", Style::default().fg(theme::MUTED)),
                 ]
+            } else if app.mcp_panel.is_some() {
+                let view_label = app.mcp_panel.as_ref().map(|p| match &p.view {
+                    crate::app::McpPanelView::ServerList => {
+                        if p.confirm_delete.is_some() {
+                            vec![
+                                Span::styled("Enter", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":确认  ", Style::default().fg(theme::MUTED)),
+                                Span::styled("其他键", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":取消", Style::default().fg(theme::MUTED)),
+                            ]
+                        } else {
+                            vec![
+                                Span::styled("↑↓", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":移动  ", Style::default().fg(theme::MUTED)),
+                                Span::styled("Enter", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":详情  ", Style::default().fg(theme::MUTED)),
+                                Span::styled("Ctrl+R", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":重连  ", Style::default().fg(theme::MUTED)),
+                                Span::styled("Ctrl+D", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                                Span::styled(":删除  ", Style::default().fg(theme::MUTED)),
+                                Span::styled("Esc", Style::default().fg(theme::ERROR).add_modifier(Modifier::BOLD)),
+                                Span::styled(":关闭", Style::default().fg(theme::MUTED)),
+                            ]
+                        }
+                    }
+                    crate::app::McpPanelView::ToolList { .. }
+                    | crate::app::McpPanelView::ResourceList { .. } => {
+                        vec![
+                            Span::styled("↑↓", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                            Span::styled(":移动  ", Style::default().fg(theme::MUTED)),
+                            Span::styled("Tab", Style::default().fg(theme::WARNING).add_modifier(Modifier::BOLD)),
+                            Span::styled(":切换  ", Style::default().fg(theme::MUTED)),
+                            Span::styled("Esc", Style::default().fg(theme::ERROR).add_modifier(Modifier::BOLD)),
+                            Span::styled(":返回", Style::default().fg(theme::MUTED)),
+                        ]
+                    }
+                });
+                view_label.unwrap_or_default()
             } else if app.core.model_panel.is_some() {
                 vec![
                     Span::styled(

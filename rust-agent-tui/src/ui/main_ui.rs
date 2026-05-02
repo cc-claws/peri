@@ -94,6 +94,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         if app.cron.cron_panel.is_some() {
             panels::cron::render_cron_panel(f, app, panel_area);
         }
+        if app.mcp_panel.is_some() {
+            panels::mcp::render_mcp_panel(f, app, panel_area);
+        }
     }
 
     // 输入框前缀 ❯ + 文本区
@@ -151,6 +154,13 @@ fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 
         .max(6);
         // 确认删除提示替换帮助行，高度不变
         base
+    } else if let Some(panel) = &app.mcp_panel {
+        let item_count = match &panel.view {
+            crate::app::McpPanelView::ServerList => panel.servers.len(),
+            crate::app::McpPanelView::ToolList { tools, .. } => tools.len(),
+            crate::app::McpPanelView::ResourceList { resources, .. } => resources.len(),
+        };
+        (item_count as u16 + 4).max(6)
     } else if let Some(crate::app::InteractionPrompt::Approval(p)) = &app.agent.interaction_prompt {
         (p.items.len() as u16 * 2 + 5).max(5)
     } else if let Some(crate::app::InteractionPrompt::Questions(p)) = &app.agent.interaction_prompt

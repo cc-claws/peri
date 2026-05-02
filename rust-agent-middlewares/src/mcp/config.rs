@@ -44,6 +44,12 @@ pub enum McpConfigError {
         #[source]
         source: std::io::Error,
     },
+    #[error("MCP 配置文件写入失败: {path}: {source}")]
+    WriteError {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// 从指定 JSON 文件加载 MCP 配置，文件不存在时返回空配置
@@ -185,6 +191,121 @@ pub fn load_merged_config(cwd: &Path) -> McpConfigFile {
     }
 
     merged
+}
+
+/// 原子写入 JSON 文件（先写临时文件，再 rename 替换）
+fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), McpConfigError> {
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let tmp_path = dir.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
+
+    let content = serde_json::to_string_pretty(value).map_err(|e| McpConfigError::WriteError {
+        path: path.display().to_string(),
+        source: e.into(),
+    })?;
+
+    use std::io::Write;
+    let mut file = std::fs::File::create(&tmp_path).map_err(|e| McpConfigError::WriteError {
+        path: path.display().to_string(),
+        source: e,
+    })?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| McpConfigError::WriteError {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+    drop(file);
+
+    std::fs::rename(&tmp_path, path).map_err(|e| McpConfigError::WriteError {
+        path: path.display().to_string(),
+        source: e,
+    })?;
+
+    Ok(())
+}
+
+/// 从配置文件中删除指定的 MCP 服务器
+/// 优先尝试项目级 .mcp.json，未找到则尝试全局 settings.json
+pub fn remove_server_from_config(cwd: &Path, server_name: &str) -> Result<(), McpConfigError> {
+    let global_path = dirs_next::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".zen-code")
+        .join("settings.json");
+    remove_server_from_config_with_paths(cwd, &global_path, server_name)
+}
+
+/// 内部实现：允许注入全局路径（便于测试）
+fn remove_server_from_config_with_paths(
+    cwd: &Path,
+    global_path: &Path,
+    server_name: &str,
+) -> Result<(), McpConfigError> {
+    // 1. 尝试项目级删除
+    let project_path = cwd.join(".mcp.json");
+    if project_path.exists() {
+        let content = std::fs::read_to_string(&project_path).map_err(|e| McpConfigError::ReadError {
+            path: project_path.display().to_string(),
+            source: e,
+        })?;
+
+        let mut config: McpConfigFile = serde_json::from_str(&content).map_err(|e| {
+            McpConfigError::ParseError {
+                path: project_path.display().to_string(),
+                source: e,
+            }
+        })?;
+
+        if config.mcp_servers.contains_key(server_name) {
+            config.mcp_servers.remove(server_name);
+            let value = serde_json::to_value(&config).map_err(|e| McpConfigError::WriteError {
+                path: project_path.display().to_string(),
+                source: e.into(),
+            })?;
+            atomic_write_json(&project_path, &value)?;
+            return Ok(());
+        }
+    }
+
+    // 2. 尝试全局删除
+    if global_path.exists() {
+        let content = std::fs::read_to_string(global_path).map_err(|e| McpConfigError::ReadError {
+            path: global_path.display().to_string(),
+            source: e,
+        })?;
+
+        let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+            McpConfigError::ParseError {
+                path: global_path.display().to_string(),
+                source: e,
+            }
+        })?;
+
+        // 尝试 config.mcpServers 路径
+        let mut removed = false;
+        if let Some(config) = value.get_mut("config").and_then(|c| c.get_mut("mcpServers")) {
+            if let Some(servers) = config.as_object_mut() {
+                if servers.remove(server_name).is_some() {
+                    removed = true;
+                }
+            }
+        }
+
+        // 尝试顶层 mcpServers 路径
+        if !removed {
+            if let Some(servers) = value.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
+                if servers.remove(server_name).is_some() {
+                    removed = true;
+                }
+            }
+        }
+
+        if removed {
+            atomic_write_json(global_path, &value)?;
+            return Ok(());
+        }
+    }
+
+    // 未在任何配置中找到该 server，幂等返回
+    Ok(())
 }
 
 #[cfg(test)]
@@ -335,5 +456,86 @@ mod tests {
         assert_eq!(merged.mcp_servers.len(), 2);
         assert!(merged.mcp_servers.contains_key("fs"));
         assert!(merged.mcp_servers.contains_key("gh"));
+    }
+
+    #[test]
+    fn test_remove_server_from_project_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let mcp_path = dir.path().join(".mcp.json");
+        std::fs::write(
+            &mcp_path,
+            r#"{"mcpServers":{"server-a":{"command":"npx"},"server-b":{"command":"uvx"}}}"#,
+        )
+        .unwrap();
+
+        remove_server_from_config(dir.path(), "server-a").unwrap();
+
+        let content = std::fs::read_to_string(&mcp_path).unwrap();
+        let config: McpConfigFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(config.mcp_servers.len(), 1);
+        assert!(config.mcp_servers.contains_key("server-b"));
+    }
+
+    #[test]
+    fn test_remove_server_from_global_config_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".zen-code");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_path = settings_dir.join("settings.json");
+        std::fs::write(
+            &settings_path,
+            r#"{"config":{"mcpServers":{"gh":{"url":"https://api.github.com"}}},"otherSetting":42}"#,
+        )
+        .unwrap();
+
+        // 使用不含 .mcp.json 的 cwd，使函数回退到全局路径
+        let empty_cwd = dir.path().join("empty_project");
+        std::fs::create_dir_all(&empty_cwd).unwrap();
+        remove_server_from_config_with_paths(&empty_cwd, &settings_path, "gh").unwrap();
+
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(value["config"]["mcpServers"].as_object().unwrap().is_empty());
+        assert_eq!(value["otherSetting"], 42);
+    }
+
+    #[test]
+    fn test_remove_server_from_global_config_top_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".zen-code");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_path = settings_dir.join("settings.json");
+        std::fs::write(
+            &settings_path,
+            r#"{"mcpServers":{"fs":{"command":"npx"}},"otherSetting":42}"#,
+        )
+        .unwrap();
+
+        let empty_cwd = dir.path().join("empty_project");
+        std::fs::create_dir_all(&empty_cwd).unwrap();
+        remove_server_from_config_with_paths(&empty_cwd, &settings_path, "fs").unwrap();
+
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(value["mcpServers"].as_object().unwrap().is_empty());
+        assert_eq!(value["otherSetting"], 42);
+    }
+
+    #[test]
+    fn test_remove_server_nonexistent_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        // 空的 .mcp.json
+        std::fs::write(dir.path().join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+        // 空的 settings.json
+        let settings_dir = dir.path().join(".zen-code");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        std::fs::write(settings_dir.join("settings.json"), r#"{}"#).unwrap();
+
+        // 删除不存在的 server 应该 Ok
+        assert!(remove_server_from_config(dir.path(), "nonexistent").is_ok());
+
+        // 文件不变
+        let content = std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
+        assert_eq!(content, r#"{"mcpServers":{}}"#);
     }
 }

@@ -181,6 +181,12 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 return Ok(Some(Action::Redraw));
             }
 
+            // MCP 面板优先处理
+            if app.mcp_panel.is_some() {
+                handle_mcp_panel(app, input);
+                return Ok(Some(Action::Redraw));
+            }
+
             // /agents 面板优先处理
             if app.core.agent_panel.is_some() {
                 handle_agent_panel(app, input);
@@ -548,6 +554,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
             if app.core.thread_browser.is_some()
                 || app.core.agent_panel.is_some()
                 || app.cron.cron_panel.is_some()
+                || app.mcp_panel.is_some()
             {
                 return Ok(Some(Action::Redraw));
             }
@@ -1177,6 +1184,88 @@ fn handle_cron_panel(app: &mut App, input: Input) {
             ..
         } => {
             app.cron_panel_request_delete();
+        }
+        _ => {}
+    }
+}
+
+fn handle_mcp_panel(app: &mut App, input: Input) {
+    // 确认删除模式下只处理 Enter（确认）和其他键（取消）
+    if app
+        .mcp_panel
+        .as_ref()
+        .map_or(false, |p| p.confirm_delete.is_some())
+    {
+        match input {
+            Input {
+                key: Key::Enter, ..
+            } => {
+                app.mcp_panel_confirm_delete();
+            }
+            _ => {
+                app.mcp_panel_cancel_delete();
+            }
+        }
+        return;
+    }
+
+    let is_server_list = app
+        .mcp_panel
+        .as_ref()
+        .map_or(true, |p| matches!(p.view, crate::app::McpPanelView::ServerList));
+
+    match input {
+        Input {
+            key: Key::Char('c'),
+            ctrl: true,
+            ..
+        } => {
+            // Ctrl+C 在面板中不退出，忽略
+        }
+        Input { key: Key::Up, .. } => {
+            app.mcp_panel_move_up();
+        }
+        Input { key: Key::Down, .. } => {
+            app.mcp_panel_move_down();
+        }
+        Input {
+            key: Key::Enter, ..
+        } => {
+            if is_server_list {
+                app.mcp_panel_enter();
+            }
+        }
+        Input { key: Key::Esc, .. } => {
+            if is_server_list {
+                app.mcp_panel_close();
+                app.core.panel_selection.clear();
+                app.core.panel_area = None;
+            } else {
+                app.mcp_panel_back();
+            }
+        }
+        Input {
+            key: Key::Char('r'),
+            ctrl: true,
+            ..
+        } => {
+            if is_server_list {
+                app.mcp_panel_reconnect();
+            }
+        }
+        Input {
+            key: Key::Char('d'),
+            ctrl: true,
+            ..
+        } => {
+            if is_server_list {
+                app.mcp_panel_request_delete();
+            }
+        }
+        Input { key: Key::Tab, .. } => {
+            if !is_server_list {
+                app.mcp_panel_tab();
+            }
         }
         _ => {}
     }

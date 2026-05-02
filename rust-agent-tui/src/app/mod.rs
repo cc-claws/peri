@@ -17,6 +17,7 @@ mod core;
 mod cron_ops;
 mod cron_state;
 mod hint_ops;
+mod mcp_panel;
 mod history_ops;
 mod hitl_ops;
 mod hitl_prompt;
@@ -66,6 +67,7 @@ pub use agent_comm::AgentComm;
 pub use agent_comm::RetryStatus;
 pub use core::AppCore;
 pub use cron_state::{CronPanel, CronState};
+pub use mcp_panel::{McpPanel, McpPanelView};
 pub use langfuse_state::LangfuseState;
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -92,6 +94,12 @@ pub struct App {
     pub config_path_override: Option<PathBuf>,
     /// MCP 连接池：首次 agent 启动时惰性初始化，App 退出时 shutdown
     pub mcp_pool: Option<Arc<rust_agent_middlewares::mcp::McpClientPool>>,
+    /// MCP 后台初始化状态接收端
+    pub mcp_init_rx: Option<tokio::sync::watch::Receiver<rust_agent_middlewares::mcp::McpInitStatus>>,
+    /// MCP 管理面板状态
+    pub mcp_panel: Option<McpPanel>,
+    /// MCP 就绪提示显示截止时间（首次 Ready 时设置，3 秒后消失）
+    pub mcp_ready_shown_until: std::cell::Cell<Option<std::time::Instant>>,
 }
 
 impl App {
@@ -182,7 +190,26 @@ impl App {
             ),
             config_path_override: None,
             mcp_pool: None,
+            mcp_init_rx: None,
+            mcp_panel: None,
+            mcp_ready_shown_until: std::cell::Cell::new(None),
         }
+    }
+
+    /// 后台初始化 MCP 连接池（不阻塞 UI），在 run_app 中 App::new() 之后调用
+    pub fn spawn_mcp_init(&mut self) {
+        use rust_agent_middlewares::mcp::{McpClientPool, McpInitStatus};
+
+        let pool = Arc::new(McpClientPool::new_pending());
+        self.mcp_pool = Some(pool.clone());
+
+        let (init_tx, init_rx) = tokio::sync::watch::channel(McpInitStatus::Pending);
+        self.mcp_init_rx = Some(init_rx);
+
+        let cwd = self.cwd.clone();
+        tokio::spawn(async move {
+            McpClientPool::run_initialize(pool, std::path::Path::new(&cwd), init_tx).await;
+        });
     }
 
     /// 保存配置：优先写入 override 路径（测试用），否则写入全局路径

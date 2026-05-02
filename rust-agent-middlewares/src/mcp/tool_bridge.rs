@@ -162,7 +162,7 @@ pub fn build_tool_bridges(pool: &McpClientPool) -> Vec<Box<dyn BaseTool>> {
             bridges.push(Box::new(McpToolBridge::new(
                 &client.name,
                 tool,
-                Arc::clone(client),
+                Arc::clone(&client),
             )));
         }
     }

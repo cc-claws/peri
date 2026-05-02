@@ -139,22 +139,34 @@ impl App {
         let cron_scheduler = Some(self.cron.scheduler.clone());
         let permission_mode = self.permission_mode.clone();
 
-        // 惰性初始化 MCP 连接池（仅在首次 agent 启动时创建，后续复用）
-        if self.mcp_pool.is_none() {
-            let pool_cwd = self.cwd.clone();
-            let pool = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(rust_agent_middlewares::mcp::McpClientPool::initialize(
-                        std::path::Path::new(&pool_cwd),
-                    ))
-            });
-            tracing::info!("MCP 连接池初始化完成");
-            self.mcp_pool = Some(Arc::new(pool));
-        }
         let mcp_pool = self.mcp_pool.clone();
+        let mcp_init_rx = self.mcp_init_rx.clone();
 
         tokio::spawn(
             async move {
+                // 异步等待 MCP 后台初始化完成（最多 30 秒）
+                if let Some(ref rx) = mcp_init_rx {
+                    let mut rx = rx.clone();
+                    let is_done = |s: &rust_agent_middlewares::mcp::McpInitStatus| {
+                        matches!(
+                            s,
+                            rust_agent_middlewares::mcp::McpInitStatus::Ready { .. }
+                                | rust_agent_middlewares::mcp::McpInitStatus::Failed(_)
+                        )
+                    };
+                    if !is_done(&rx.borrow()) {
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(30),
+                            async {
+                                while !is_done(&rx.borrow()) {
+                                    rx.changed().await.ok();
+                                }
+                            },
+                        )
+                        .await;
+                    }
+                }
+
                 agent::run_universal_agent(agent::AgentRunConfig {
                     provider,
                     input: agent_input,

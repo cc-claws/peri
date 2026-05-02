@@ -20,7 +20,7 @@ gray_matter = "0.3"
 dirs-next = "2"
 serde_yaml = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v7", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 croner = "3"
 tracing = "0.1"
 parking_lot = "0.12"

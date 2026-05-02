@@ -319,6 +319,9 @@ impl App {
             ),
             config_path_override: Some(test_config_path),
             mcp_pool: None,
+            mcp_init_rx: None,
+            mcp_panel: None,
+            mcp_ready_shown_until: std::cell::Cell::new(None),
         };
 
         let handle = crate::ui::headless::HeadlessHandle {
