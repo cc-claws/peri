@@ -76,3 +76,7 @@
 ## R26 — Design Review Round 4 (用户思维)
 
 页面标题随路由动态更新（编辑器/运行记录/运行详情）、编辑器运行按钮增加 loading 状态防重复点击、运行详情轮询失败时 toast 通知用户实时更新已停止、relativeTime 处理负值（时钟偏差）避免奇怪显示。
+
+## R27 — Design Review Round 5 (用户思维)
+
+拓扑图 depends JSON.parse 加 try-catch 防格式错误崩溃、属性面板 textarea 增加 input 事件 500ms 防抖实时同步 YAML、拓扑节点 ID 超 16 字符截断加省略号防溢出、保存按钮增加 loading 状态防重复提交。

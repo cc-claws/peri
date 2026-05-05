@@ -245,7 +245,8 @@ function renderTopology(run) {
   nodes.forEach(n => g.setNode(n.node_id, { width: NODE_W, height: NODE_H }));
   nodes.forEach(n => {
     const raw = n.depends || [];
-    const deps = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []);
+    let deps;
+    try { deps = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []); } catch (_) { deps = []; }
     deps.forEach(dep => { if (g.node(dep)) g.setEdge(dep, n.node_id); });
   });
 
@@ -322,11 +323,15 @@ function renderTopology(run) {
 
     const statusDot = `<circle cx="${x + 16}" cy="${pos.y + oy}" r="4" fill="${color}"/>`;
 
+    // Truncate node ID for display (max 16 chars to fit in NODE_W=160)
+    const maxTextLen = 16;
+    const displayId = id.length > maxTextLen ? id.substring(0, maxTextLen - 1) + '…' : id;
+
     svg += `<g class="topo-node-group" style="cursor:pointer;" onclick="showNodeLogDetail('${escapeHtml(id)}')">`;
     svg += pulseCircle;
     svg += `<rect x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="10" fill="#FFFFFF" stroke="${color}" stroke-width="${isRunning ? 2 : 1.5}" filter="url(#topoShadow)" ${animStyle}/>`;
     svg += statusDot;
-    svg += `<text x="${x + 28}" y="${pos.y + oy - 2}" text-anchor="start" fill="var(--text-bright, #0F172A)" font-family="var(--font-display, system-ui)" font-size="12" font-weight="600">${escapeHtml(id)}</text>`;
+    svg += `<text x="${x + 28}" y="${pos.y + oy - 2}" text-anchor="start" fill="var(--text-bright, #0F172A)" font-family="var(--font-display, system-ui)" font-size="12" font-weight="600">${escapeHtml(displayId)}</text>`;
     svg += `<text x="${x + 28}" y="${pos.y + oy + 12}" text-anchor="start" fill="${color}" font-size="10">${statusText(node.status)} · ${nodeTypeLabel(node.node_type)}</text>`;
     svg += '</g>';
   });

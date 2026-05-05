@@ -458,6 +458,17 @@ function bindPropertyEvents(container) {
       if (this.type === 'number') val = val ? Number(val) : null;
       updateNodeData(dfId, key, val);
     });
+    // Textareas also sync on input for real-time feedback
+    if (el.tagName === 'TEXTAREA') {
+      el.addEventListener('input', function() {
+        clearTimeout(this._inputTimer);
+        this._inputTimer = setTimeout(() => {
+          const dfId = Number(this.dataset.dfId);
+          const key = this.dataset.key;
+          updateNodeData(dfId, key, this.value);
+        }, 500);
+      });
+    }
   });
   container.querySelectorAll('input[data-action="rename"]').forEach(el => {
     el.addEventListener('change', function() { renameNode(Number(this.dataset.dfId), this.value); });
@@ -873,6 +884,11 @@ function doImportYaml() {
 async function editorSave() {
   const errors = validateWorkflow();
   if (errors.length) { showToast('保存前请修复验证错误', 'error'); return; }
+
+  const btn = document.getElementById('btnSave');
+  const originalHtml = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;"></span> 保存中...'; }
+
   const yaml = exportToYaml();
   const name = wfMeta.name || 'untitled';
   try {
@@ -888,6 +904,8 @@ async function editorSave() {
     }
   } catch (e) {
     showToast('网络错误: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; lucide.createIcons({ nodes: [btn] }); }
   }
 }
 
