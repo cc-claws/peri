@@ -756,14 +756,20 @@ function validateWorkflow() {
   const adj = {};
   (parsed.nodes || []).forEach(n => { adj[n.id] = n.depends || []; });
   const visited = new Set(), stack = new Set();
+  const path = [];
   function dfs(id) {
-    if (stack.has(id)) return true;
+    if (stack.has(id)) {
+      const cycleStart = path.indexOf(id);
+      const cyclePath = path.slice(cycleStart).concat(id).join(' → ');
+      errors.push(`依赖循环: ${cyclePath}`);
+      return true;
+    }
     if (visited.has(id)) return false;
-    visited.add(id); stack.add(id);
+    visited.add(id); stack.add(id); path.push(id);
     for (const dep of (adj[id] || [])) { if (dfs(dep)) return true; }
-    stack.delete(id); return false;
+    stack.delete(id); path.pop(); return false;
   }
-  for (const id of ids) { if (dfs(id)) { errors.push('依赖图中存在循环'); break; } }
+  for (const id of ids) { if (dfs(id)) break; }
 
   displayValidation(errors);
   return errors;

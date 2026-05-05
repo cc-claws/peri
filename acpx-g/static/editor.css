@@ -318,6 +318,9 @@
     background: var(--surface-void);
     tab-size: 2;
 }
+.yaml-textarea:focus {
+    box-shadow: inset 0 0 0 1px var(--brand);
+}
 
 /* ─── Property Panel ──────────────────────────────────────────── */
 .property-panel {
