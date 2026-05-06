@@ -5,5 +5,6 @@ pub mod login;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod plugin;
 pub mod status;
 pub mod thread_browser;

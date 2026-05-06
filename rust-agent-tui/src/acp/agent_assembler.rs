@@ -56,6 +56,7 @@ pub fn assemble_agent(
                 Some(ov),
                 &cwd,
                 crate::prompt::PromptFeatures::detect(),
+                &[],
             )
         },
     );
@@ -124,6 +125,7 @@ pub fn assemble_agent(
             overrides,
             cwd_dir,
             crate::prompt::PromptFeatures::detect(),
+            &[],
         )
     });
 

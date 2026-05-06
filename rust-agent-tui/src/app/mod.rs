@@ -7,6 +7,7 @@ pub mod interaction_broker;
 pub mod login_panel;
 pub mod memory_panel;
 pub mod model_panel;
+pub mod plugin_panel;
 mod provider;
 pub mod setup_wizard;
 pub mod status_panel;
@@ -120,6 +121,10 @@ pub struct App {
     pub status_panel: Option<status_panel::StatusPanel>,
     /// /memory 记忆文件面板状态
     pub memory_panel: Option<crate::app::memory_panel::MemoryPanel>,
+    /// 已加载的插件聚合数据（Skills 路径、MCP 服务器、Agent 路径、命令列表）
+    pub plugin_data: Option<rust_agent_middlewares::plugin::PluginLoadResult>,
+    /// /plugin 插件管理面板状态
+    pub plugin_panel: Option<plugin_panel::PluginPanel>,
     /// 双击 Ctrl+C 退出：第一次按下时记录时间，2 秒内再次按下才真正退出
     pub quit_pending_since: Option<std::time::Instant>,
 }
@@ -212,6 +217,8 @@ impl App {
             mcp_ready_shown_until: std::cell::Cell::new(None),
             status_panel: None,
             memory_panel: None,
+            plugin_data: None,
+            plugin_panel: None,
             quit_pending_since: None,
         }
     }
@@ -240,8 +247,8 @@ impl App {
 
     /// 创建新 session 并切换到它
     pub fn new_session(&mut self) {
-        let command_registry = crate::command::default_registry();
-        let skills = {
+        let mut command_registry = crate::command::default_registry();
+        let mut skills = {
             let mut dirs = Vec::new();
             if let Some(home) = dirs_next::home_dir() {
                 dirs.push(home.join(".claude").join("skills"));
@@ -254,6 +261,18 @@ impl App {
             }
             rust_agent_middlewares::skills::list_skills(&dirs)
         };
+        // 追加插件 skills（去重）
+        if let Some(pd) = &self.plugin_data {
+            let plugin_skills = rust_agent_middlewares::skills::list_skills(&pd.all_skill_dirs);
+            let existing_names: std::collections::HashSet<String> =
+                skills.iter().map(|s| s.name.clone()).collect();
+            for skill in plugin_skills {
+                if !existing_names.contains(&skill.name) {
+                    skills.push(skill);
+                }
+            }
+            command_registry.register_plugin_commands(pd.all_commands.clone());
+        }
         let session = ChatSession::new(self.cwd.clone(), command_registry, skills);
         self.sessions.push(session);
         self.active = self.sessions.len() - 1;

@@ -193,6 +193,43 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     // 后台初始化 MCP 连接池（不阻塞 UI）
     app.spawn_mcp_init();
 
+    // 加载已启用插件数据
+    {
+        let claude_dir = dirs_next::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".claude");
+        app.plugin_data =
+            Some(rust_agent_middlewares::plugin::load_enabled_plugins_aggregated(&claude_dir));
+        // 将插件命令注册到所有 session 的 CommandRegistry
+        let plugin_commands = app
+            .plugin_data
+            .as_ref()
+            .map(|pd| pd.all_commands.clone())
+            .unwrap_or_default();
+        // 将插件 skills 追加到所有 session 的 skill 列表
+        let plugin_skill_dirs = app
+            .plugin_data
+            .as_ref()
+            .map(|pd| pd.all_skill_dirs.clone())
+            .unwrap_or_default();
+        let plugin_skills = rust_agent_middlewares::skills::list_skills(&plugin_skill_dirs);
+        for session in &mut app.sessions {
+            session
+                .core
+                .command_registry
+                .register_plugin_commands(plugin_commands.clone());
+        }
+        for session in &mut app.sessions {
+            let existing_names: std::collections::HashSet<String> =
+                session.core.skills.iter().map(|s| s.name.clone()).collect();
+            for skill in &plugin_skills {
+                if !existing_names.contains(&skill.name) {
+                    session.core.skills.push(skill.clone());
+                }
+            }
+        }
+    }
+
     // Spinner tick 驱动：每次渲染前推进一帧
     app.sessions[app.active].spinner_state.advance_tick();
 

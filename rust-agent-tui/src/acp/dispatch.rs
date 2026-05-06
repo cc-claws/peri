@@ -344,7 +344,7 @@ pub async fn handle_prompt(
 
         // 构建系统提示词
         let features = crate::prompt::PromptFeatures::detect();
-        let system_prompt = crate::prompt::build_system_prompt(None, &cwd, features);
+        let system_prompt = crate::prompt::build_system_prompt(None, &cwd, features, &[]);
 
         // 创建 CancellationToken（关联 session cancel_token）
         let cancel = AgentCancellationToken::new();

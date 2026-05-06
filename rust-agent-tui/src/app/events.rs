@@ -105,4 +105,11 @@ pub enum AgentEvent {
         action: String,
         success: bool,
     },
+    /// 插件操作完成（安装/卸载/更新）
+    PluginActionCompleted {
+        plugin_id: String,
+        action: String,
+        success: bool,
+        message: String,
+    },
 }

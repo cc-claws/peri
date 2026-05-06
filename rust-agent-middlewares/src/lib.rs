@@ -29,6 +29,15 @@ pub mod cron;
 pub mod hitl;
 pub mod mcp;
 pub mod middleware;
+pub mod plugin;
+pub use plugin::{
+    AvailablePlugin, ClaudeSettings, CommandEntry, CommandProvider, CommandSource, InstallScope,
+    InstalledPlugin, InstalledPlugins, KnownMarketplace, LoadedPlugin, LoaderError,
+    MarketplaceEntry, MarketplaceError, MarketplaceManager, MarketplaceManifest, MarketplacePlugin,
+    MarketplaceRefreshEvent, MarketplaceSource, PluginAgent, PluginAuthor, PluginChannel,
+    PluginCommand, PluginCommandProvider, PluginConfigError, PluginLspServer, PluginManifest,
+    PluginMiddleware, PluginOption,
+};
 pub mod skills;
 pub mod tools;
 
@@ -50,8 +59,8 @@ pub use skills::{
     list_skills, load_global_skills_dir, load_skill_metadata, SkillMetadata, SkillsMiddleware,
 };
 pub use subagent::{
-    scan_agents, BackgroundTask, BackgroundTaskRegistry, BackgroundTaskStatus,
-    SkillPreloadMiddleware, SubAgentMiddleware, SubAgentTool,
+    scan_agents, scan_agents_with_extra_dirs, BackgroundTask, BackgroundTaskRegistry,
+    BackgroundTaskStatus, SkillPreloadMiddleware, SubAgentMiddleware, SubAgentTool,
 };
 pub use tools::{ArcToolWrapper, AskUserTool, BoxToolWrapper};
 
@@ -73,6 +82,14 @@ pub mod prelude {
     pub use crate::middleware::PrependSystemMiddleware;
     pub use crate::middleware::{
         FilesystemMiddleware, TerminalMiddleware, TodoMiddleware, WebMiddleware,
+    };
+    pub use crate::plugin::{
+        AvailablePlugin, ClaudeSettings, CommandEntry, CommandProvider, CommandSource,
+        InstallScope, InstalledPlugin, InstalledPlugins, KnownMarketplace, LoadedPlugin,
+        LoaderError, MarketplaceEntry, MarketplaceError, MarketplaceManager, MarketplaceManifest,
+        MarketplacePlugin, MarketplaceRefreshEvent, MarketplaceSource, PluginAgent, PluginAuthor,
+        PluginChannel, PluginCommand, PluginCommandProvider, PluginConfigError, PluginLspServer,
+        PluginManifest, PluginMiddleware, PluginOption,
     };
     pub use crate::skills::{SkillMetadata, SkillsMiddleware};
     pub use crate::subagent::{SkillPreloadMiddleware, SubAgentMiddleware, SubAgentTool};

@@ -69,9 +69,13 @@ acpx-g (DAG workflow engine，独立)
 
 ## Skills
 
-搜索顺序：`~/.claude/skills/` → `skillsDir`（`~/.zen-code/settings.json`） → `./.claude/skills/`，同名先到先得。
+搜索顺序：`~/.claude/skills/` → `skillsDir`（`~/.zen-code/settings.json`） → `./.claude/skills/` → 插件 skills，同名先到先得。
+
+**插件 skills 集成**：`SkillsMiddleware.with_extra_dirs()` 是插件 skills 路径注入入口，修改 SkillsMiddleware 搜索逻辑时必须保留此扩展点。
 
 每个 skill 是子目录，内含 `SKILL.md`（YAML frontmatter: `name`, `description`）。输入 `/` 前缀触发 Skills 浮层，Tab 导航，Enter 补全为 `/skill-name`。
+
+**Frontmatter 解析**：skill 和插件命令的 Markdown 文件使用 `gray_matter` crate（YAML engine）解析 frontmatter。新增命令解析时必须复用 `Matter::<YAML>::new()` 模式，不手动解析 `---` 分隔符。
 
 ## Fork 模式
 
@@ -132,6 +136,8 @@ Token 累积达到上下文窗口阈值（默认 85%）时自动触发：
 
 **工具命名**：`mcp__{server_name}__{tool_name}`，HITL 对 `mcp__` 前缀的工具默认需审批。
 
+**插件 MCP 命名空间**：插件定义的 MCP 服务器使用 `{plugin_name}__{server_name}` 前缀命名空间，`ConfigSource::Plugin` 标记来源，合并后工具名为 `mcp__{plugin_name}__{server_name}__{tool_name}`。新增 MCP 配置合并逻辑时必须遵循此前缀规则。
+
 **资源读取**：`mcp__read_resource` 工具，参数 `server_name` + `uri`，120 秒超时。
 
 **连接池**（`McpClientPool`）：
@@ -153,7 +159,7 @@ Token 累积达到上下文窗口阈值（默认 85%）时自动触发：
 
 ## SubAgents（子 Agent 委派）
 
-`Agent` 工具允许 LLM 将子任务委派给 `.claude/agents/{agent_id}/agent.md` 定义的专门 agent 执行。
+`Agent` 工具允许 LLM 将子任务委派给 `.claude/agents/{agent_id}/agent.md` 定义的专门 agent 执行。插件 agent 通过 `scan_agents_with_extra_dirs` 追加搜索路径，同名 agent_id 去重（项目级优先），系统提示词中的 agent 列表由 `prompt.rs` 的 `format_available_agents` 生成。
 
 **工具过滤规则**：
 

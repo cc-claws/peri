@@ -60,8 +60,8 @@ impl PromptEnv {
 /// 格式：`- {agent_id}: {description}`
 /// agent_id 即 subagent_type 参数值（文件名去掉 .md），作为主标识符。
 /// 无 agent 时返回提示信息。
-fn format_available_agents(cwd: &str) -> String {
-    let agents = rust_agent_middlewares::scan_agents(cwd);
+fn format_available_agents(cwd: &str, extra_agent_dirs: &[std::path::PathBuf]) -> String {
+    let agents = rust_agent_middlewares::scan_agents_with_extra_dirs(cwd, extra_agent_dirs);
     if agents.is_empty() {
         return "No agents currently configured. You can add agent definitions in `.claude/agents/`.".to_string();
     }
@@ -83,6 +83,7 @@ pub fn build_system_prompt(
     overrides: Option<&AgentOverrides>,
     cwd: &str,
     features: PromptFeatures,
+    extra_agent_dirs: &[std::path::PathBuf],
 ) -> String {
     let env = PromptEnv::detect(cwd);
 
@@ -141,7 +142,10 @@ pub fn build_system_prompt(
         .replace("{{platform}}", &env.platform)
         .replace("{{os_version}}", &env.os_version)
         .replace("{{date}}", &env.date)
-        .replace("{{available_agents}}", &format_available_agents(&env.cwd))
+        .replace(
+            "{{available_agents}}",
+            &format_available_agents(&env.cwd, extra_agent_dirs),
+        )
 }
 
 /// 将 `AgentOverrides` 拼成注入到提示词顶部的覆盖块。
@@ -204,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_no_overrides_contains_all_sections() {
-        let result = build_system_prompt(None, "/tmp", PromptFeatures::none());
+        let result = build_system_prompt(None, "/tmp", PromptFeatures::none(), &[]);
         assert!(
             result.contains("Following conventions"),
             "应包含 02_system 段落"
@@ -219,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_no_overrides_no_duplicate_tone_proactiveness() {
-        let result = build_system_prompt(None, "/tmp", PromptFeatures::none());
+        let result = build_system_prompt(None, "/tmp", PromptFeatures::none(), &[]);
         // "# Tone and style" 仅出现 1 次（来自 06_tone_style.md 静态段落，不来自覆盖块）
         assert_eq!(
             result.matches("# Tone and style").count(),
@@ -241,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_no_overrides_no_leading_newlines() {
-        let result = build_system_prompt(None, "/tmp", PromptFeatures::none());
+        let result = build_system_prompt(None, "/tmp", PromptFeatures::none(), &[]);
         assert!(
             !result.starts_with("\n\n"),
             "无 overrides 时提示词不应以空行开头"
@@ -255,7 +259,7 @@ mod tests {
             tone: None,
             proactiveness: None,
         };
-        let result = build_system_prompt(Some(&overrides), "/tmp", PromptFeatures::none());
+        let result = build_system_prompt(Some(&overrides), "/tmp", PromptFeatures::none(), &[]);
         assert!(
             result.starts_with("test persona"),
             "有 overrides 时应以 persona 内容开头"
@@ -264,20 +268,20 @@ mod tests {
 
     #[test]
     fn test_placeholders_replaced() {
-        let result = build_system_prompt(None, "/custom/path", PromptFeatures::none());
+        let result = build_system_prompt(None, "/custom/path", PromptFeatures::none(), &[]);
         assert!(!result.contains("{{"), "不应包含未替换的占位符");
         assert!(result.contains("/custom/path"), "cwd 占位符应被替换");
     }
 
     #[test]
     fn test_env_contains_cwd() {
-        let result = build_system_prompt(None, "/custom/path", PromptFeatures::none());
+        let result = build_system_prompt(None, "/custom/path", PromptFeatures::none(), &[]);
         assert!(result.contains("/custom/path"), "环境信息应包含 cwd");
     }
 
     #[test]
     fn test_features_none_excludes_all_gated_sections() {
-        let result = build_system_prompt(None, "/tmp", PromptFeatures::none());
+        let result = build_system_prompt(None, "/tmp", PromptFeatures::none(), &[]);
         assert!(
             !result.contains("Human-in-the-Loop"),
             "全关闭时不应包含 HITL 段落"
@@ -303,7 +307,7 @@ mod tests {
             hitl_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, "/tmp", features);
+        let result = build_system_prompt(None, "/tmp", features, &[]);
         assert!(
             result.contains("Human-in-the-Loop"),
             "hitl_enabled 时应包含 HITL 段落"
@@ -316,7 +320,7 @@ mod tests {
             subagent_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, "/tmp", features);
+        let result = build_system_prompt(None, "/tmp", features, &[]);
         assert!(
             result.contains("SubAgent Delegation"),
             "subagent_enabled 时应包含 SubAgent 段落"
@@ -329,7 +333,7 @@ mod tests {
             cron_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, "/tmp", features);
+        let result = build_system_prompt(None, "/tmp", features, &[]);
         assert!(
             result.contains("Scheduled Tasks"),
             "cron_enabled 时应包含 Cron 段落"
@@ -342,7 +346,7 @@ mod tests {
             skills_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, "/tmp", features);
+        let result = build_system_prompt(None, "/tmp", features, &[]);
         assert!(
             result.contains("# Skills"),
             "skills_enabled 时应包含 Skills 段落标题"
@@ -357,7 +361,7 @@ mod tests {
             cron_enabled: true,
             skills_enabled: true,
         };
-        let result = build_system_prompt(None, "/tmp", features);
+        let result = build_system_prompt(None, "/tmp", features, &[]);
         assert!(result.contains("Human-in-the-Loop"), "应包含 HITL 段落");
         assert!(
             result.contains("SubAgent Delegation"),
@@ -402,7 +406,7 @@ mod tests {
             subagent_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, dir.to_str().unwrap(), features);
+        let result = build_system_prompt(None, dir.to_str().unwrap(), features, &[]);
         assert!(
             result.contains("- tester: A test agent"),
             "Should contain formatted agent entry, got: {}",
@@ -423,7 +427,7 @@ mod tests {
             subagent_enabled: true,
             ..PromptFeatures::none()
         };
-        let result = build_system_prompt(None, dir.to_str().unwrap(), features);
+        let result = build_system_prompt(None, dir.to_str().unwrap(), features, &[]);
         assert!(
             result.contains("No agents currently configured"),
             "Should contain no-agents message"
@@ -435,7 +439,7 @@ mod tests {
     fn test_available_agents_not_replaced_when_subagent_disabled() {
         let dir = tmp_dir("prompt_test_agent_disabled");
         let features = PromptFeatures::none();
-        let result = build_system_prompt(None, dir.to_str().unwrap(), features);
+        let result = build_system_prompt(None, dir.to_str().unwrap(), features, &[]);
         assert!(
             !result.contains("SubAgent Delegation"),
             "SubAgent section should not be included when disabled"
@@ -459,7 +463,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = format_available_agents(dir.to_str().unwrap());
+        let result = format_available_agents(dir.to_str().unwrap(), &[]);
         assert!(
             result.contains("- reviewer: Reviews code"),
             "Should contain reviewer entry"
@@ -476,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_format_available_agents_empty_dir() {
-        let result = format_available_agents("/nonexistent/path/that/does/not/exist");
+        let result = format_available_agents("/nonexistent/path/that/does/not/exist", &[]);
         assert!(
             result.contains("No agents currently configured"),
             "Should return no-agents message for nonexistent path"

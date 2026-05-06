@@ -32,6 +32,10 @@ pub struct AgentRunConfig {
         Option<Arc<parking_lot::Mutex<rust_agent_middlewares::cron::CronScheduler>>>,
     pub permission_mode: Arc<SharedPermissionMode>,
     pub mcp_pool: Option<Arc<rust_agent_middlewares::mcp::McpClientPool>>,
+    /// 插件 skills 搜索路径（追加到 SkillsMiddleware）
+    pub plugin_skill_dirs: Vec<std::path::PathBuf>,
+    /// 插件 agent 搜索路径（追加到 scan_agents）
+    pub plugin_agent_dirs: Vec<std::path::PathBuf>,
 }
 
 pub async fn run_universal_agent(cfg: AgentRunConfig) {
@@ -51,6 +55,8 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         cron_scheduler,
         permission_mode,
         mcp_pool,
+        plugin_skill_dirs,
+        plugin_agent_dirs,
     } = cfg;
     // 如果设置了 agent_id，提前解析 agent.md 获取可覆盖部分（persona / tone / proactiveness），
     // 替换 system prompt 中对应占位符；安全策略、代码规范等硬约束始终保留。
@@ -67,7 +73,8 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         None
     };
     let features = crate::prompt::PromptFeatures::detect();
-    let system_prompt = crate::prompt::build_system_prompt(overrides.as_ref(), &cwd, features);
+    let system_prompt =
+        crate::prompt::build_system_prompt(overrides.as_ref(), &cwd, features, &plugin_agent_dirs);
     let provider_for_factory = provider.clone();
     let provider_name = provider.display_name().to_string();
 
@@ -214,7 +221,12 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
     let system_builder: Arc<
         dyn Fn(Option<&rust_agent_middlewares::AgentOverrides>, &str) -> String + Send + Sync,
     > = Arc::new(|overrides, cwd| {
-        crate::prompt::build_system_prompt(overrides, cwd, crate::prompt::PromptFeatures::detect())
+        crate::prompt::build_system_prompt(
+            overrides,
+            cwd,
+            crate::prompt::PromptFeatures::detect(),
+            &[],
+        )
     });
 
     // Parent message snapshot shared reference: written by SubAgentMiddleware::before_agent, read by Fork child agent
@@ -249,7 +261,9 @@ pub async fn run_universal_agent(cfg: AgentRunConfig) {
         .with_system_prompt(system_prompt) // executor 内部固定 prepend，无顺序约束
         .add_middleware(Box::new(AgentsMdMiddleware::new()))
         .add_middleware(Box::new(AgentDefineMiddleware::new()))
-        .add_middleware(Box::new(SkillsMiddleware::new()))
+        .add_middleware(Box::new(
+            SkillsMiddleware::new().with_extra_dirs(plugin_skill_dirs),
+        ))
         .add_middleware(Box::new(SkillPreloadMiddleware::new(preload_skills, &cwd)))
         .add_middleware(Box::new(FilesystemMiddleware::new()))
         .add_middleware(Box::new(TerminalMiddleware::new()))

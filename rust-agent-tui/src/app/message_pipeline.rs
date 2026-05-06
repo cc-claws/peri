@@ -298,7 +298,8 @@ impl MessagePipeline {
             | AgentEvent::OAuthAuthorizationCompleted { .. }
             | AgentEvent::OAuthAuthorizationFailed { .. }
             | AgentEvent::BackgroundTaskCompleted { .. }
-            | AgentEvent::McpActionCompleted { .. } => {
+            | AgentEvent::McpActionCompleted { .. }
+            | AgentEvent::PluginActionCompleted { .. } => {
                 vec![PipelineAction::None]
             }
         }

@@ -70,6 +70,7 @@ fn render_server_list(f: &mut Frame, app: &mut App, area: Rect) {
         if !user_servers.is_empty() {
             let header_text = match &user_servers[0].source {
                 Some(ConfigSource::Global(path)) => format!("  User MCPs ({})", path.display()),
+                Some(ConfigSource::Plugin) => "  Plugin MCPs".to_string(),
                 _ => "  User MCPs".to_string(),
             };
             lines.push(Line::from(Span::styled(
@@ -272,6 +273,7 @@ fn render_server_detail(f: &mut Frame, app: &mut App, area: Rect) {
         if let Some(source) = &info.source {
             let path_str = match source {
                 ConfigSource::Project(p) | ConfigSource::Global(p) => p.display().to_string(),
+                ConfigSource::Plugin => "Plugin".to_string(),
             };
             lines.push(detail_line(
                 label_width,
@@ -389,8 +391,7 @@ fn partition_by_source(
     for s in servers {
         match &s.source {
             Some(ConfigSource::Project(_)) => project.push(s),
-            Some(ConfigSource::Global(_)) => user.push(s),
-            None => user.push(s), // 无来源的归入 user 组
+            Some(ConfigSource::Global(_)) | Some(ConfigSource::Plugin) | None => user.push(s),
         }
     }
     (project, user)

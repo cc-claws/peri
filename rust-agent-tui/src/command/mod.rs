@@ -12,6 +12,8 @@ pub mod loop_cmd;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod plugin;
+pub mod plugin_command;
 pub mod split;
 
 /// 注册所有内置命令，返回配置好的 CommandRegistry
@@ -29,6 +31,7 @@ pub fn default_registry() -> CommandRegistry {
     r.register(Box::new(cron::CronCommand));
     r.register(Box::new(mcp::McpCommand));
     r.register(Box::new(memory::MemoryCommand));
+    r.register(Box::new(plugin::PluginCommand));
     r.register(Box::new(cost::CostCommand));
     r.register(Box::new(context_cmd::ContextCommand));
     r.register(Box::new(split::SplitCommand));
@@ -66,6 +69,16 @@ impl CommandRegistry {
 
     pub fn register(&mut self, cmd: Box<dyn Command>) {
         self.commands.push(cmd);
+    }
+
+    /// 注册插件提供的命令（从 PluginLoadResult 获取）
+    pub fn register_plugin_commands(
+        &mut self,
+        commands: Vec<rust_agent_middlewares::plugin::CommandEntry>,
+    ) {
+        for entry in commands {
+            self.register(Box::new(plugin_command::PluginCommandAdapter::new(entry)));
+        }
     }
 
     /// 解析并执行命令。

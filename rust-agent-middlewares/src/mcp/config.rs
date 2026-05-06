@@ -10,6 +10,8 @@ pub enum ConfigSource {
     Project(PathBuf),
     /// 全局配置（~/.zen-code/settings.json）
     Global(PathBuf),
+    /// 插件配置
+    Plugin,
 }
 
 /// 单个 MCP 服务器配置
@@ -253,6 +255,22 @@ pub fn load_merged_config(cwd: &Path) -> McpConfigFile {
     }
 
     merged
+}
+
+/// 将插件提供的 MCP 服务器合并到已有配置中
+/// 服务器名称格式为 `{plugin_name}__{server_name}`，避免与用户配置冲突
+pub fn merge_plugin_servers(
+    mut config: McpConfigFile,
+    plugin_name: &str,
+    servers: &HashMap<String, McpServerConfig>,
+) -> McpConfigFile {
+    for (server_name, server_config) in servers {
+        let namespaced_name = format!("{}__{}", plugin_name, server_name);
+        let mut cfg = server_config.clone();
+        cfg.source = Some(ConfigSource::Plugin);
+        config.mcp_servers.insert(namespaced_name, cfg);
+    }
+    config
 }
 
 /// 原子写入 JSON 文件（先写临时文件，再 rename 替换）
@@ -771,5 +789,45 @@ mod tests {
 
         let content = std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
         assert_eq!(content, r#"{"mcpServers":{}}"#);
+    }
+
+    #[test]
+    fn test_merge_plugin_servers_namespaced() {
+        let config = McpConfigFile::default();
+        let mut servers = HashMap::new();
+        servers.insert("db".to_string(), test_config());
+        let result = merge_plugin_servers(config, "my-plugin", &servers);
+        assert!(result.mcp_servers.contains_key("my-plugin__db"));
+        assert_eq!(result.mcp_servers.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_plugin_servers_preserves_existing() {
+        let mut config = McpConfigFile::default();
+        config.mcp_servers.insert("db".to_string(), test_config());
+        let mut servers = HashMap::new();
+        servers.insert("db".to_string(), test_config());
+        let result = merge_plugin_servers(config, "my-plugin", &servers);
+        assert!(
+            result.mcp_servers.contains_key("db"),
+            "original db should be preserved"
+        );
+        assert!(
+            result.mcp_servers.contains_key("my-plugin__db"),
+            "namespaced db should exist"
+        );
+        assert_eq!(result.mcp_servers.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_plugin_servers_source_tag() {
+        let config = McpConfigFile::default();
+        let mut servers = HashMap::new();
+        servers.insert("db".to_string(), test_config());
+        let result = merge_plugin_servers(config, "my-plugin", &servers);
+        assert_eq!(
+            result.mcp_servers["my-plugin__db"].source,
+            Some(ConfigSource::Plugin),
+        );
     }
 }

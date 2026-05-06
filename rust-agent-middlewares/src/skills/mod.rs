@@ -52,6 +52,7 @@ pub struct SkillsMiddleware {
     project_skills_dir: Option<PathBuf>,
     global_skills_dir: Option<PathBuf>,
     user_skills_dir: Option<PathBuf>,
+    extra_dirs: Vec<PathBuf>,
 }
 
 impl SkillsMiddleware {
@@ -60,6 +61,7 @@ impl SkillsMiddleware {
             project_skills_dir: None,
             global_skills_dir: None,
             user_skills_dir: None,
+            extra_dirs: vec![],
         }
     }
 
@@ -89,6 +91,13 @@ impl SkillsMiddleware {
         self
     }
 
+    /// 追加额外 skills 搜索目录（用于插件 skills 路径注入）
+    /// 插件 skills 优先级低于项目级，同名先到先得
+    pub fn with_extra_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.extra_dirs = dirs;
+        self
+    }
+
     /// 根据 cwd 解析实际搜索目录列表（用户级优先于项目级）
     fn resolve_dirs(&self, cwd: &str) -> Vec<PathBuf> {
         let user_dir = self.user_skills_dir.clone().unwrap_or_else(|| {
@@ -104,12 +113,17 @@ impl SkillsMiddleware {
             .clone()
             .unwrap_or_else(|| PathBuf::from(cwd).join(".claude").join("skills"));
 
-        // 按优先级：~/.claude/skills > globalConfig > ./.claude/skills
+        // 按优先级：~/.claude/skills > globalConfig > ./.claude/skills > 插件
         let mut dirs = vec![user_dir];
         if let Some(global) = global_dir {
             dirs.push(global);
         }
         dirs.push(project_dir);
+        for dir in &self.extra_dirs {
+            if dir.is_dir() {
+                dirs.push(dir.clone());
+            }
+        }
         dirs
     }
 
@@ -269,5 +283,73 @@ mod tests {
             "提示词不应包含旧 #skill_name 格式，实际: {}",
             content
         );
+    }
+
+    #[tokio::test]
+    async fn test_extra_dirs_injected() {
+        let dir = tempdir().unwrap();
+        let extra1 = dir.path().join("extra1");
+        let extra2 = dir.path().join("extra2");
+        std::fs::create_dir_all(&extra1).unwrap();
+        std::fs::create_dir_all(&extra2).unwrap();
+        write_skill(&extra1, "extra-skill-1", "from extra 1");
+        write_skill(&extra2, "extra-skill-2", "from extra 2");
+
+        let mw = SkillsMiddleware::new()
+            .with_user_dir(dir.path().to_path_buf())
+            .with_project_dir(dir.path().to_path_buf())
+            .with_extra_dirs(vec![extra1.clone(), extra2.clone()]);
+
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        mw.before_agent(&mut state).await.unwrap();
+
+        let content = state.messages()[0].content();
+        assert!(
+            content.contains("extra-skill-1"),
+            "Should include skill from extra dir 1"
+        );
+        assert!(
+            content.contains("extra-skill-2"),
+            "Should include skill from extra dir 2"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_extra_dirs_nonexistent_skipped() {
+        let dir = tempdir().unwrap();
+        let mw = SkillsMiddleware::new()
+            .with_user_dir(dir.path().to_path_buf())
+            .with_project_dir(dir.path().to_path_buf())
+            .with_extra_dirs(vec![dir.path().join("nonexistent")]);
+
+        let mut state = AgentState::new(dir.path().to_str().unwrap());
+        let result = mw.before_agent(&mut state).await;
+        assert!(result.is_ok());
+        assert_eq!(state.messages().len(), 0, "No skills should be injected");
+    }
+
+    #[tokio::test]
+    async fn test_extra_dirs_priority_after_project() {
+        let dir = tempdir().unwrap();
+        // project skills directory (acts as cwd/.claude/skills)
+        let project_skills = dir.path().join("project-skills");
+        std::fs::create_dir_all(&project_skills).unwrap();
+        write_skill(&project_skills, "project-skill", "from project");
+
+        let extra_dir = dir.path().join("extra");
+        std::fs::create_dir_all(&extra_dir).unwrap();
+        write_skill(&extra_dir, "extra-skill", "from extra");
+
+        let mw = SkillsMiddleware::new()
+            .with_user_dir(dir.path().to_path_buf())
+            .with_project_dir(project_skills)
+            .with_extra_dirs(vec![extra_dir]);
+
+        let mut state = AgentState::new("/nonexistent");
+        mw.before_agent(&mut state).await.unwrap();
+
+        let content = state.messages()[0].content();
+        assert!(content.contains("project-skill"));
+        assert!(content.contains("extra-skill"));
     }
 }

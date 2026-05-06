@@ -302,6 +302,30 @@ fn render_second_row(f: &mut Frame, app: &App, area: Rect) {
                 key!["←→" => ":切换Tab  ", "Esc" => ":关闭"]
             } else if app.memory_panel.is_some() {
                 key!["↑↓" => ":选择  ", "Enter" => ":编辑  ", "Esc" => ":关闭"]
+            } else if app.plugin_panel.is_some() {
+                let panel = app.plugin_panel.as_ref().unwrap();
+                use crate::app::plugin_panel::PluginPanelView;
+                if panel.confirm_delete.is_some() {
+                    key!["Enter" => ":确认卸载  ", "其他键" => ":取消"]
+                } else if panel.discover_searching {
+                    key!["Esc/↑↓" => ":退出搜索  ", "←→" => ":Tab  ", "Enter" => ":安装  ", "Backspace" => ":删除"]
+                } else if panel.discover_detail_index.is_some() {
+                    key!["↑↓" => ":导航  ", "Enter" => ":执行  ", "Esc" => ":返回列表"]
+                } else if panel.detail_index.is_some() {
+                    key!["↑↓" => ":导航  ", "Enter" => ":执行  ", "Esc" => ":返回列表"]
+                } else {
+                    match panel.view {
+                        PluginPanelView::Discover => {
+                            key!["↑↓" => ":选择  ", "输入" => ":搜索  ", "Enter" => ":安装  ", "←→/Tab" => ":Tab  ", "Esc" => ":关闭"]
+                        }
+                        PluginPanelView::Marketplaces => {
+                            key!["↑↓" => ":选择  ", "←→/Tab" => ":Tab  ", "Esc" => ":关闭"]
+                        }
+                        _ => {
+                            key!["↑↓" => ":导航  ", "Space" => ":切换  ", "Enter" => ":详情  ", "←→/Tab" => ":Tab  ", "Esc" => ":关闭"]
+                        }
+                    }
+                }
             } else if let Some(browser) = &app.sessions[app.active].core.thread_browser {
                 if browser.confirm_delete {
                     key!["Enter" => ":确认  ", "其他键" => ":取消"]

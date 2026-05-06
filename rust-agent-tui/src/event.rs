@@ -241,6 +241,12 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 return Ok(Some(Action::Redraw));
             }
 
+            // 插件面板优先处理
+            if app.plugin_panel.is_some() {
+                handle_plugin_panel(app, input);
+                return Ok(Some(Action::Redraw));
+            }
+
             // /agents 面板优先处理
             if app.sessions[app.active].core.agent_panel.is_some() {
                 handle_agent_panel(app, input);
@@ -721,6 +727,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 || app.mcp_panel.is_some()
                 || app.status_panel.is_some()
                 || app.memory_panel.is_some()
+                || app.plugin_panel.is_some()
             {
                 return Ok(Some(Action::Redraw));
             }
@@ -741,6 +748,17 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                         app.mcp_panel_scroll_up(3);
                         return Ok(Some(Action::Redraw));
                     }
+                    if mouse.row >= area.y
+                        && mouse.row < area.y + area.height
+                        && mouse.column >= area.x
+                        && mouse.column < area.x + area.width
+                        && app.plugin_panel.is_some()
+                    {
+                        if let Some(panel) = &mut app.plugin_panel {
+                            panel.scroll_offset = panel.scroll_offset.saturating_sub(3);
+                        }
+                        return Ok(Some(Action::Redraw));
+                    }
                 }
                 app.scroll_up();
             }
@@ -753,6 +771,18 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                         && app.mcp_panel.is_some()
                     {
                         app.mcp_panel_scroll_down(3);
+                        return Ok(Some(Action::Redraw));
+                    }
+                    if mouse.row >= area.y
+                        && mouse.row < area.y + area.height
+                        && mouse.column >= area.x
+                        && mouse.column < area.x + area.width
+                        && app.plugin_panel.is_some()
+                    {
+                        if let Some(panel) = &mut app.plugin_panel {
+                            let max = panel.current_list_len() as u16;
+                            panel.scroll_offset = (panel.scroll_offset + 3).min(max);
+                        }
                         return Ok(Some(Action::Redraw));
                     }
                 }
@@ -1747,6 +1777,465 @@ fn handle_mcp_panel(app: &mut App, input: Input) {
         }
         _ => {}
     }
+}
+
+fn handle_plugin_panel(app: &mut App, input: Input) {
+    use crate::app::plugin_panel::PluginPanelView;
+
+    // 确认删除模式下只处理 Enter（确认）和其他键（取消）
+    if app
+        .plugin_panel
+        .as_ref()
+        .is_some_and(|p| p.confirm_delete.is_some())
+    {
+        match input {
+            Input {
+                key: Key::Enter, ..
+            } => {
+                // 获取要卸载的插件信息
+                let (plugin_id, project_path) = if let Some(panel) = &app.plugin_panel {
+                    if let Some(id) = panel.confirm_delete.clone() {
+                        let entry = panel.entries.iter().find(|e| e.id == id);
+                        let project_path = entry.and_then(|e| e.project_path.clone());
+                        (Some(id), project_path)
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                };
+
+                if let Some(plugin_id) = plugin_id {
+                    // 加入 uninstalling 集合（不立即从列表移除）
+                    if let Some(ref mut panel) = app.plugin_panel {
+                        panel.uninstalling.insert(plugin_id.clone());
+                    }
+                    // 关闭确认对话框
+                    app.plugin_panel_cancel_delete();
+
+                    // 异步执行卸载，传递正确的 project_dir
+                    let claude_dir = rust_agent_middlewares::plugin::claude_home();
+                    let tx = app.bg_event_tx.clone();
+                    let project_dir = project_path.map(|p| std::path::PathBuf::from(p));
+                    tokio::spawn(async move {
+                        let result = rust_agent_middlewares::plugin::uninstall_plugin(
+                            &plugin_id,
+                            &claude_dir,
+                            project_dir.as_deref(),
+                        )
+                        .await;
+
+                        let success = result.is_ok();
+                        let message = if let Err(e) = result {
+                            format!("卸载失败: {e}")
+                        } else {
+                            "卸载成功".to_string()
+                        };
+
+                        let _ = tx.try_send(crate::app::AgentEvent::PluginActionCompleted {
+                            plugin_id,
+                            action: "uninstall".to_string(),
+                            success,
+                            message,
+                        });
+                    });
+                } else {
+                    // 没有找到插件信息，关闭对话框
+                    app.plugin_panel_cancel_delete();
+                }
+            }
+            _ => {
+                app.plugin_panel_cancel_delete();
+            }
+        }
+        return;
+    }
+
+    // 判断当前视图
+    let current_view = app
+        .plugin_panel
+        .as_ref()
+        .map(|p| p.view)
+        .unwrap_or(PluginPanelView::Installed);
+
+    // Discover 搜索模式
+    let is_searching = app
+        .plugin_panel
+        .as_ref()
+        .is_some_and(|p| p.discover_searching);
+    if is_searching {
+        match input {
+            Input {
+                key: Key::Char(c), ..
+            } => {
+                app.discover_search_input(c);
+            }
+            Input {
+                key: Key::Backspace,
+                ..
+            } => {
+                app.discover_search_backspace();
+            }
+            Input { key: Key::Up, .. } | Input { key: Key::Down, .. } => {
+                // 上下键退出搜索模式并移动光标
+                app.discover_exit_search();
+                if matches!(input.key, Key::Up) {
+                    app.discover_move_up();
+                } else {
+                    app.discover_move_down();
+                }
+            }
+            Input { key: Key::Left, .. }
+            | Input {
+                key: Key::Right, ..
+            } => {
+                // 左右键退出搜索模式并切换标签
+                app.discover_exit_search();
+                if matches!(input.key, Key::Right) {
+                    app.plugin_panel_tab();
+                } else {
+                    app.plugin_panel_shift_tab();
+                }
+            }
+            Input { key: Key::Esc, .. } => {
+                app.discover_exit_search();
+            }
+            Input {
+                key: Key::Enter, ..
+            } => {
+                // Enter 直接安装当前选中的插件
+                app.discover_exit_search();
+                handle_discover_install_current(app);
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Discover 详情视图
+    let is_discover_detail = app
+        .plugin_panel
+        .as_ref()
+        .is_some_and(|p| p.discover_detail_index.is_some());
+    if is_discover_detail {
+        match input {
+            Input { key: Key::Up, .. } => {
+                app.discover_detail_up();
+            }
+            Input { key: Key::Down, .. } => {
+                app.discover_detail_down();
+            }
+            Input {
+                key: Key::Enter, ..
+            } => {
+                if let Some((name, marketplace, scope)) = app.discover_detail_action() {
+                    // 异步安装
+                    let claude_dir = dirs_next::home_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join(".claude");
+                    let cache_dir = rust_agent_middlewares::plugin::marketplaces_cache_dir();
+                    let plugin_id = format!("{}@{}", name, marketplace);
+                    let project_dir = std::path::PathBuf::from(&app.cwd);
+                    // 标记安装中
+                    if let Some(panel) = &mut app.plugin_panel {
+                        panel.installing.insert(plugin_id.clone());
+                    }
+                    let tx = app.bg_event_tx.clone();
+                    tokio::spawn(async move {
+                        let result = rust_agent_middlewares::plugin::install_plugin(
+                            &name,
+                            &marketplace,
+                            scope,
+                            &cache_dir,
+                            &claude_dir,
+                            Some(&project_dir),
+                        )
+                        .await;
+                        let _ = tx.try_send(crate::app::AgentEvent::PluginActionCompleted {
+                            plugin_id: format!("{}@{}", name, marketplace),
+                            action: "install".to_string(),
+                            success: result.is_ok(),
+                            message: result
+                                .map(|_| String::new())
+                                .unwrap_or_else(|e| e.to_string()),
+                        });
+                    });
+                    // 退出详情页
+                    app.discover_exit_detail();
+                }
+            }
+            Input { key: Key::Esc, .. } => {
+                app.discover_exit_detail();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Installed 详情视图
+    let is_installed_detail = app
+        .plugin_panel
+        .as_ref()
+        .is_some_and(|p| p.detail_index.is_some());
+    if is_installed_detail {
+        match input {
+            Input { key: Key::Up, .. } => {
+                app.plugin_panel_detail_up();
+            }
+            Input { key: Key::Down, .. } => {
+                app.plugin_panel_detail_down();
+            }
+            Input {
+                key: Key::Enter, ..
+            } => {
+                app.plugin_panel_detail_action();
+            }
+            Input { key: Key::Esc, .. } => {
+                app.plugin_panel_exit_detail();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // 列表视图 - 根据当前视图分发
+    match current_view {
+        PluginPanelView::Discover => {
+            match input {
+                // 左右箭头切换标签
+                Input {
+                    key: Key::Right, ..
+                } => {
+                    app.plugin_panel_tab();
+                }
+                Input { key: Key::Left, .. } => {
+                    app.plugin_panel_shift_tab();
+                }
+                // Tab 键切换标签
+                Input { key: Key::Tab, .. } => {
+                    app.plugin_panel_tab();
+                }
+                // 上下键移动光标
+                Input { key: Key::Up, .. } => {
+                    app.discover_move_up();
+                }
+                Input { key: Key::Down, .. } => {
+                    app.discover_move_down();
+                }
+                // 输入字母自动进入搜索模式
+                Input {
+                    key: Key::Char(c), ..
+                } => {
+                    app.discover_enter_search();
+                    app.discover_search_input(c);
+                }
+                // Enter 直接安装当前插件
+                Input {
+                    key: Key::Enter, ..
+                } => {
+                    handle_discover_install_current(app);
+                }
+                // Esc 关闭面板
+                Input { key: Key::Esc, .. } => {
+                    app.plugin_panel_close();
+                    app.sessions[app.active].core.panel_selection.clear();
+                    app.sessions[app.active].core.panel_area = None;
+                }
+                _ => {}
+            }
+        }
+        PluginPanelView::Marketplaces => {
+            match input {
+                // 左右箭头切换标签
+                Input {
+                    key: Key::Right, ..
+                } => {
+                    app.plugin_panel_tab();
+                }
+                Input { key: Key::Left, .. } => {
+                    app.plugin_panel_shift_tab();
+                }
+                // Tab 键切换标签
+                Input { key: Key::Tab, .. } => {
+                    app.plugin_panel_tab();
+                }
+                Input { key: Key::Up, .. } => {
+                    app.marketplace_move_up();
+                }
+                Input { key: Key::Down, .. } => {
+                    app.marketplace_move_down();
+                }
+                Input { key: Key::Esc, .. } => {
+                    app.plugin_panel_close();
+                    app.sessions[app.active].core.panel_selection.clear();
+                    app.sessions[app.active].core.panel_area = None;
+                }
+                _ => {}
+            }
+        }
+        _ => {
+            // Installed / Errors 视图
+            match input {
+                // 左右箭头切换标签
+                Input {
+                    key: Key::Right, ..
+                } => {
+                    app.plugin_panel_tab();
+                }
+                Input { key: Key::Left, .. } => {
+                    app.plugin_panel_shift_tab();
+                }
+                // Tab 键切换标签
+                Input { key: Key::Tab, .. } => {
+                    app.plugin_panel_tab();
+                }
+                Input { key: Key::Up, .. } => {
+                    app.plugin_panel_move_up();
+                }
+                Input { key: Key::Down, .. } => {
+                    app.plugin_panel_move_down();
+                }
+                Input {
+                    key: Key::Char(' '),
+                    ..
+                } => {
+                    app.plugin_panel_toggle_enabled();
+                }
+                Input {
+                    key: Key::Enter, ..
+                } => {
+                    app.plugin_panel_enter_detail();
+                }
+                Input { key: Key::Esc, .. } => {
+                    app.plugin_panel_close();
+                    app.sessions[app.active].core.panel_selection.clear();
+                    app.sessions[app.active].core.panel_area = None;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// 批量安装 Discover 视图中已选中的插件（保留以备将来使用）
+#[allow(dead_code)]
+fn handle_discover_batch_install(app: &mut App) {
+    let selected: Vec<(String, String)> = {
+        let panel = match &app.plugin_panel {
+            Some(p) => p,
+            None => return,
+        };
+        let mut result = Vec::new();
+        for id in &panel.discover_selected {
+            // 从 plugin_id 反解 name 和 marketplace
+            if let Some((name, marketplace)) = id.split_once('@') {
+                result.push((name.to_string(), marketplace.to_string()));
+            }
+        }
+        result
+    };
+
+    if selected.is_empty() {
+        return;
+    }
+
+    let claude_dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".claude");
+    let cache_dir = rust_agent_middlewares::plugin::marketplaces_cache_dir();
+    let tx = app.bg_event_tx.clone();
+    let project_dir = std::path::PathBuf::from(&app.cwd);
+
+    // 标记所有选中为安装中
+    if let Some(panel) = &mut app.plugin_panel {
+        for (name, marketplace) in &selected {
+            panel.installing.insert(format!("{}@{}", name, marketplace));
+        }
+    }
+
+    // 清空选中
+    if let Some(panel) = &mut app.plugin_panel {
+        panel.discover_selected.clear();
+    }
+
+    for (name, marketplace) in selected {
+        let tx = tx.clone();
+        let claude_dir = claude_dir.clone();
+        let cache_dir = cache_dir.clone();
+        let project_dir = project_dir.clone();
+        tokio::spawn(async move {
+            let result = rust_agent_middlewares::plugin::install_plugin(
+                &name,
+                &marketplace,
+                rust_agent_middlewares::plugin::InstallScope::User,
+                &cache_dir,
+                &claude_dir,
+                Some(&project_dir),
+            )
+            .await;
+            let _ = tx.try_send(crate::app::AgentEvent::PluginActionCompleted {
+                plugin_id: format!("{}@{}", name, marketplace),
+                action: "install".to_string(),
+                success: result.is_ok(),
+                message: result
+                    .map(|_| String::new())
+                    .unwrap_or_else(|e| e.to_string()),
+            });
+        });
+    }
+}
+
+/// 安装 Discover 视图中当前光标处的插件
+fn handle_discover_install_current(app: &mut App) {
+    let (name, marketplace, scope, plugin_id) = {
+        let panel = match &app.plugin_panel {
+            Some(p) => p,
+            None => return,
+        };
+        let plugin = match panel.discover_current_plugin() {
+            Some(p) => p,
+            None => return,
+        };
+        // 默认安装到 User scope
+        (
+            plugin.name.clone(),
+            plugin.marketplace.clone(),
+            rust_agent_middlewares::plugin::InstallScope::User,
+            plugin.plugin_id.clone(),
+        )
+    };
+
+    // 标记安装中
+    if let Some(panel) = &mut app.plugin_panel {
+        panel.installing.insert(plugin_id.clone());
+    }
+
+    let claude_dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".claude");
+    let cache_dir = rust_agent_middlewares::plugin::marketplaces_cache_dir();
+    let project_dir = std::path::PathBuf::from(&app.cwd);
+    let tx = app.bg_event_tx.clone();
+
+    tokio::spawn(async move {
+        let result = rust_agent_middlewares::plugin::install_plugin(
+            &name,
+            &marketplace,
+            scope,
+            &cache_dir,
+            &claude_dir,
+            Some(&project_dir),
+        )
+        .await;
+        let _ = tx.try_send(crate::app::AgentEvent::PluginActionCompleted {
+            plugin_id,
+            action: "install".to_string(),
+            success: result.is_ok(),
+            message: result
+                .map(|_| String::new())
+                .unwrap_or_else(|e| e.to_string()),
+        });
+    });
 }
 
 fn handle_oauth_prompt(app: &mut App, input: Input) {

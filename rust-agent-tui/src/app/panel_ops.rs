@@ -268,6 +268,245 @@ impl App {
         self.memory_panel = None;
     }
 
+    pub fn open_plugin_panel(&mut self) {
+        use crate::app::plugin_panel::{
+            DiscoverPlugin, MarketplaceViewEntry, MarketplaceViewStatus, PluginEntry,
+            PluginItemType,
+        };
+        use rust_agent_middlewares::plugin::{
+            load_claude_settings, load_installed_plugins, load_known_marketplaces,
+            load_plugin_manifest, marketplaces_cache_dir, MarketplaceManager,
+        };
+
+        let claude_dir = dirs_next::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".claude");
+
+        let installed = load_installed_plugins(None).unwrap_or_default();
+        let settings = load_claude_settings(None).unwrap_or_default();
+        let enabled_ids: std::collections::HashSet<&str> = settings
+            .enabled_plugins
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        // 已安装插件 ID 集合（用于 Discover 标记 installed）
+        let installed_ids: std::collections::HashSet<String> =
+            installed.plugins.iter().map(|p| p.id.clone()).collect();
+
+        let mut entries: Vec<PluginEntry> = Vec::new();
+        for p in &installed.plugins {
+            let enabled = enabled_ids.contains(p.id.as_str());
+
+            let manifest_result = load_plugin_manifest(&p.install_path);
+            let (
+                plugin_type,
+                load_error,
+                description,
+                author,
+                commands,
+                skills,
+                agents,
+                mcp_servers,
+            ) = match &manifest_result {
+                Ok(m) => {
+                    let has_mcp = m.mcp_servers.as_ref().map_or(false, |s| !s.is_empty());
+                    let has_content = m.commands.as_ref().map_or(false, |c| !c.is_empty())
+                        || m.skills.as_ref().map_or(false, |s| !s.is_empty())
+                        || m.agents.as_ref().map_or(false, |a| !a.is_empty());
+                    let ptype = if has_mcp && !has_content {
+                        PluginItemType::Mcp
+                    } else {
+                        PluginItemType::Plugin
+                    };
+                    let desc = m.description.clone();
+                    let auth = m.author.as_ref().map(|a| a.name.clone());
+                    let cmds = m
+                        .commands
+                        .as_ref()
+                        .map(|c| {
+                            c.iter()
+                                .filter_map(|cmd| {
+                                    cmd.name.clone().or_else(|| {
+                                        std::path::Path::new(&cmd.path)
+                                            .file_stem()
+                                            .and_then(|s| s.to_str().map(String::from))
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let sks = m.skills.clone().unwrap_or_default();
+                    let ags = m
+                        .agents
+                        .as_ref()
+                        .map(|a| a.iter().map(|ag| ag.name.clone()).collect())
+                        .unwrap_or_default();
+                    let mcps = m
+                        .mcp_servers
+                        .as_ref()
+                        .map(|s| s.keys().cloned().collect())
+                        .unwrap_or_default();
+                    (ptype, None, desc, auth, cmds, sks, ags, mcps)
+                }
+                Err(e) => (
+                    PluginItemType::Plugin,
+                    Some(e.to_string()),
+                    String::new(),
+                    None,
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                ),
+            };
+
+            entries.push(PluginEntry {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                plugin_type,
+                marketplace: p.marketplace.clone(),
+                enabled,
+                scope: p.scope,
+                version: p.version.clone(),
+                install_path: p.install_path.clone(),
+                project_path: p.project_path.clone(),
+                load_error,
+                description,
+                author,
+                commands,
+                skills,
+                agents,
+                mcp_servers,
+            });
+        }
+
+        // 按 scope 排序: Project 在前, User 在后
+        entries.sort_by(|a, b| {
+            let scope_order = |s: &rust_agent_middlewares::plugin::InstallScope| match s {
+                rust_agent_middlewares::plugin::InstallScope::Project => 0,
+                rust_agent_middlewares::plugin::InstallScope::Local => 1,
+                rust_agent_middlewares::plugin::InstallScope::User => 2,
+            };
+            scope_order(&a.scope).cmp(&scope_order(&b.scope))
+        });
+
+        // --- 加载 Discover 数据 ---
+        let cache_base = marketplaces_cache_dir();
+        let mgr = MarketplaceManager::new(None);
+        let known = load_known_marketplaces(None).unwrap_or_default();
+
+        // 构建 discover_plugins：从已缓存的 marketplace manifest 中提取
+        let mut discover_plugins: Vec<DiscoverPlugin> = Vec::new();
+        let mut marketplace_view_entries: Vec<MarketplaceViewEntry> = Vec::new();
+
+        // 合并 extraKnownMarketplaces
+        let mut all_known = known;
+        for extra in &settings.extra_known_marketplaces {
+            let extra_json = serde_json::to_string(&extra.source).unwrap_or_default();
+            let already_exists = all_known
+                .iter()
+                .any(|km| serde_json::to_string(&km.source).unwrap_or_default() == extra_json);
+            if !already_exists {
+                all_known.push(extra.clone());
+            }
+        }
+
+        // 确保 official marketplace 已注册
+        use rust_agent_middlewares::plugin::MarketplaceSource;
+        let has_official = all_known.iter().any(|km| match &km.source {
+            MarketplaceSource::GitHub { repo } => repo == "anthropics/claude-plugins-official",
+            _ => false,
+        });
+        if !has_official {
+            all_known.push(rust_agent_middlewares::plugin::KnownMarketplace {
+                source: MarketplaceSource::GitHub {
+                    repo: "anthropics/claude-plugins-official".into(),
+                },
+                install_location: None,
+                auto_update: true,
+                last_updated: None,
+            });
+        }
+
+        for km in &all_known {
+            let name = MarketplaceManager::extract_name_wrapper(&km.source);
+            let cached_manifest = mgr.try_load_cache_wrapper(&km.source, &name);
+
+            let (status, plugin_count) = if let Some(ref manifest) = cached_manifest {
+                let count = manifest.plugins.len();
+                (MarketplaceViewStatus::Cached, count)
+            } else {
+                (MarketplaceViewStatus::Stale, 0)
+            };
+
+            // 构建 discover 列表
+            if let Some(ref manifest) = cached_manifest {
+                for p in &manifest.plugins {
+                    let plugin_id = format!("{}@{}", p.name, name);
+                    let is_installed = installed_ids.contains(&plugin_id);
+                    discover_plugins.push(DiscoverPlugin {
+                        name: p.name.clone(),
+                        description: p.description.clone(),
+                        marketplace: name.clone(),
+                        version: p.version.clone(),
+                        author: p.author.as_ref().map(|a| a.name.clone()),
+                        installed: is_installed,
+                        plugin_id,
+                    });
+                }
+            }
+
+            // source label
+            let source_label = match &km.source {
+                MarketplaceSource::GitHub { repo } => format!("github:{}", repo),
+                MarketplaceSource::Url { url } => format!("url:{}", url),
+                MarketplaceSource::File { path } => format!("file:{}", path),
+                MarketplaceSource::Directory { path } => format!("dir:{}", path),
+                MarketplaceSource::Npm { package } => format!("npm:{}", package),
+            };
+
+            // 统计该 marketplace 的已安装插件数
+            let installed_count = installed_ids
+                .iter()
+                .filter(|id| id.ends_with(&format!("@{}", name)))
+                .count();
+
+            marketplace_view_entries.push(MarketplaceViewEntry {
+                name: name.clone(),
+                source_label,
+                plugin_count,
+                installed_count,
+                status,
+                last_updated: km.last_updated.clone(),
+                auto_update: km.auto_update,
+            });
+        }
+
+        // discover 按名称排序
+        discover_plugins.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let mut panel = crate::app::plugin_panel::PluginPanel::new(entries);
+        panel.discover_plugins = discover_plugins;
+        panel.marketplace_entries = marketplace_view_entries;
+
+        self.plugin_panel = Some(panel);
+        // 互斥：关闭其他面板
+        self.sessions[self.active].core.login_panel = None;
+        self.sessions[self.active].core.model_panel = None;
+        self.sessions[self.active].core.config_panel = None;
+        self.status_panel = None;
+        self.memory_panel = None;
+        self.mcp_panel = None;
+
+        let _ = cache_base;
+        let _ = claude_dir;
+    }
+
+    pub fn close_plugin_panel(&mut self) {
+        self.plugin_panel = None;
+    }
+
     /// 打开外部编辑器编辑选中的 memory 文件
     pub fn memory_panel_open_editor(&mut self) -> anyhow::Result<()> {
         let entry = self
@@ -508,6 +747,8 @@ impl App {
             mcp_ready_shown_until: std::cell::Cell::new(None),
             status_panel: None,
             memory_panel: None,
+            plugin_data: None,
+            plugin_panel: None,
             oauth_prompt: None,
             bg_event_tx,
             bg_event_rx: Some(bg_event_rx),

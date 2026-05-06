@@ -186,6 +186,10 @@ fn render_session_column(
         if app.memory_panel.is_some() {
             panels::memory::render_memory_panel(f, app, panel_area);
         }
+
+        if app.plugin_panel.is_some() {
+            panels::plugin::render_plugin_panel(f, app, panel_area);
+        }
     }
 
     // 缓冲消息预览（loading 时在输入框上方显示待发送消息）
@@ -336,6 +340,38 @@ fn active_panel_height(app: &App, screen_height: u16, screen_width: u16) -> u16 
             .map(|p| p.entries.len())
             .unwrap_or(0);
         (items as u16 * 2 + 4).max(6)
+    } else if app.plugin_panel.is_some() {
+        let panel = app.plugin_panel.as_ref().unwrap();
+        use crate::app::plugin_panel::PluginPanelView;
+        if panel.is_detail() {
+            20u16
+        } else {
+            match panel.view {
+                PluginPanelView::Discover => {
+                    // Tab行(2) + 搜索框(4) + 列表(每项2行, 至少显示3行) + border(2)
+                    let items = panel.discover_filtered_plugins().len();
+                    let list_height = (items as u16 * 2).min(12).max(6);
+                    list_height + 6 + 2
+                }
+                PluginPanelView::Marketplaces => {
+                    // 每个 marketplace 占 3 行(name+detail+status) + 空行
+                    let items = panel.marketplace_entries.len();
+                    (items as u16 * 4 + 4).min(25).max(8)
+                }
+                _ => {
+                    let items = panel.current_list_len();
+                    let scope_groups = {
+                        let indices = panel.visible_indices();
+                        let mut scopes = std::collections::HashSet::new();
+                        for &i in &indices {
+                            scopes.insert(panel.entries[i].scope);
+                        }
+                        scopes.len()
+                    };
+                    (items as u16 + scope_groups as u16 * 2 + 4).min(25).max(8)
+                }
+            }
+        }
     } else if let Some(crate::app::InteractionPrompt::Approval(p)) =
         &app.sessions[app.active].agent.interaction_prompt
     {

@@ -172,6 +172,16 @@ impl App {
         let permission_mode = self.permission_mode.clone();
 
         let mcp_pool = self.mcp_pool.clone();
+        let plugin_skill_dirs = self
+            .plugin_data
+            .as_ref()
+            .map(|pd| pd.all_skill_dirs.clone())
+            .unwrap_or_default();
+        let plugin_agent_dirs = self
+            .plugin_data
+            .as_ref()
+            .map(|pd| pd.all_agent_dirs.clone())
+            .unwrap_or_default();
         let mcp_init_rx = self.mcp_init_rx.clone();
 
         tokio::spawn(
@@ -212,6 +222,8 @@ impl App {
                     cron_scheduler,
                     permission_mode,
                     mcp_pool,
+                    plugin_skill_dirs,
+                    plugin_agent_dirs,
                 })
                 .await;
             }
@@ -506,6 +518,80 @@ impl App {
                     }
                     (_, true) => format!("[i] Action completed: {}", server_name),
                     (_, false) => format!("[i] Action failed: {}", server_name),
+                };
+                let vm = MessageViewModel::system(msg);
+                self.sessions[self.active]
+                    .core
+                    .view_messages
+                    .push(vm.clone());
+                let _ = self.sessions[self.active]
+                    .core
+                    .render_tx
+                    .send(RenderEvent::AddMessage(vm));
+                (true, false, false)
+            }
+            AgentEvent::PluginActionCompleted {
+                plugin_id,
+                action,
+                success,
+                message,
+            } => {
+                // 从 installing/uninstalling 集合中移除
+                if let Some(ref mut panel) = self.plugin_panel {
+                    panel.installing.remove(&plugin_id);
+                    panel.uninstalling.remove(&plugin_id);
+
+                    // 更新 discover 列表中的 installed 标记
+                    match (action.as_str(), success) {
+                        ("install", true) => {
+                            for dp in &mut panel.discover_plugins {
+                                if dp.plugin_id == plugin_id {
+                                    dp.installed = true;
+                                }
+                            }
+                        }
+                        ("uninstall", true) => {
+                            // 更新 discover 列表
+                            for dp in &mut panel.discover_plugins {
+                                if dp.plugin_id == plugin_id {
+                                    dp.installed = false;
+                                }
+                            }
+                            // 从 Installed 列表移除
+                            panel.entries.retain(|e| e.id != plugin_id);
+                            // 关闭详情页（如果正在查看被卸载的插件）
+                            if panel.detail_index.is_some() || panel.discover_detail_index.is_some()
+                            {
+                                panel.detail_index = None;
+                                panel.discover_detail_index = None;
+                                panel.detail_cursor = 0;
+                                panel.discover_detail_cursor = 0;
+                            }
+                            // 调整 cursor 避免越界
+                            if panel.cursor >= panel.current_list_len() {
+                                panel.cursor = panel.current_list_len().saturating_sub(1);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let msg = match (action.as_str(), success) {
+                    ("install", true) => {
+                        format!("Plugin installed: {}", plugin_id)
+                    }
+                    ("install", false) => {
+                        format!("Plugin install failed: {} ({})", plugin_id, message)
+                    }
+                    ("uninstall", true) => {
+                        format!("Plugin uninstalled: {}", plugin_id)
+                    }
+                    ("uninstall", false) => {
+                        format!("Plugin uninstall failed: {} ({})", plugin_id, message)
+                    }
+                    (_, true) => format!("Plugin action completed: {}", plugin_id),
+                    (_, false) => {
+                        format!("Plugin action failed: {} ({})", plugin_id, message)
+                    }
                 };
                 let vm = MessageViewModel::system(msg);
                 self.sessions[self.active]
