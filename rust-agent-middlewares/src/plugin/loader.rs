@@ -1,6 +1,7 @@
+use crate::mcp::config::load_from_path;
 use crate::mcp::McpServerConfig;
 use crate::plugin::config::{load_claude_settings, load_installed_plugins, load_plugin_manifest};
-use crate::plugin::types::{InstalledPlugins, PluginCommand, PluginManifest};
+use crate::plugin::types::{InstalledPlugins, McpServerEntry, PluginCommand, PluginManifest};
 use gray_matter::{engine::YAML, Matter};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -70,6 +71,8 @@ pub struct LoadedPlugin {
     pub skills_dirs: Vec<PathBuf>,
     pub agents_dirs: Vec<PathBuf>,
     pub mcp_servers: HashMap<String, McpServerConfig>,
+    /// 插件数据目录（install_path/.claude-plugin/data），供 ${CLAUDE_PLUGIN_DATA} 展开
+    pub data_path: PathBuf,
 }
 
 pub fn load_manifest(plugin_dir: &Path) -> Result<PluginManifest, LoaderError> {
@@ -176,11 +179,50 @@ pub fn extract_agents_paths(manifest: &PluginManifest, base_dir: &Path) -> Vec<P
     result
 }
 
-pub fn extract_mcp_servers(manifest: &PluginManifest) -> HashMap<String, McpServerConfig> {
-    match &manifest.mcp_servers {
-        Some(servers) => servers.clone(),
-        None => HashMap::new(),
+/// Extract MCP servers from plugin manifest.
+/// Supports inline config objects and .mcp.json file path references.
+pub fn extract_mcp_servers(
+    manifest: &PluginManifest,
+    install_path: &Path,
+) -> HashMap<String, McpServerConfig> {
+    let entries = match &manifest.mcp_servers {
+        Some(servers) => servers,
+        None => return HashMap::new(),
+    };
+
+    let mut result = HashMap::new();
+    for (name, entry) in entries {
+        match entry {
+            McpServerEntry::Config(cfg) => {
+                result.insert(name.clone(), (**cfg).clone());
+            }
+            McpServerEntry::FilePath(path) => {
+                let resolved = install_path.join(path);
+                match load_from_path(&resolved) {
+                    Ok(file_config) => {
+                        for (srv_name, srv_cfg) in file_config.mcp_servers {
+                            // 文件路径引用中的服务器名保留，外层会再加命名空间
+                            let final_name = if srv_name == *name {
+                                // 如果只有一个服务器且与 key 同名，直接使用
+                                name.clone()
+                            } else {
+                                format!("{}.{}", name, srv_name)
+                            };
+                            result.insert(final_name, srv_cfg);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            path = %resolved.display(),
+                            error = %e,
+                            "插件 MCP 配置文件加载失败，跳过"
+                        );
+                    }
+                }
+            }
+        }
     }
+    result
 }
 
 pub fn load_plugins(installed: &InstalledPlugins) -> Result<Vec<LoadedPlugin>, LoaderError> {
@@ -198,7 +240,8 @@ pub fn load_plugins(installed: &InstalledPlugins) -> Result<Vec<LoadedPlugin>, L
         let commands = extract_commands(&manifest, &plugin.install_path, &plugin.name);
         let skills_dirs = extract_skills_paths(&manifest, &plugin.install_path);
         let agents_dirs = extract_agents_paths(&manifest, &plugin.install_path);
-        let mcp_servers = extract_mcp_servers(&manifest);
+        let mcp_servers = extract_mcp_servers(&manifest, &plugin.install_path);
+        let data_path = plugin.install_path.join(".claude-plugin").join("data");
 
         result.push(LoadedPlugin {
             name: plugin.name.clone(),
@@ -209,6 +252,7 @@ pub fn load_plugins(installed: &InstalledPlugins) -> Result<Vec<LoadedPlugin>, L
             skills_dirs,
             agents_dirs,
             mcp_servers,
+            data_path,
         });
     }
 
@@ -580,7 +624,7 @@ pub(crate) mod tests {
         let mut servers = HashMap::new();
         servers.insert(
             "s1".into(),
-            McpServerConfig {
+            McpServerEntry::Config(Box::new(McpServerConfig {
                 command: Some("node".into()),
                 args: None,
                 env: None,
@@ -589,11 +633,11 @@ pub(crate) mod tests {
                 oauth: None,
                 disabled: None,
                 source: None,
-            },
+            })),
         );
         manifest.mcp_servers = Some(servers);
 
-        let result = extract_mcp_servers(&manifest);
+        let result = extract_mcp_servers(&manifest, Path::new("/tmp"));
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("s1"));
     }
@@ -601,7 +645,47 @@ pub(crate) mod tests {
     #[test]
     fn test_extract_mcp_servers_none() {
         let manifest = make_manifest_with_commands(vec![]);
-        let result = extract_mcp_servers(&manifest);
+        let result = extract_mcp_servers(&manifest, Path::new("/tmp"));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_extract_mcp_servers_file_path_ref() {
+        let dir = tempdir().unwrap();
+        let plugin_dir = dir.path().join("my-plugin");
+        let servers_dir = plugin_dir.join("servers");
+        std::fs::create_dir_all(&servers_dir).unwrap();
+
+        // 创建 .mcp.json 文件
+        let mcp_json = r#"{"mcpServers":{"db":{"command":"sqlite3","args":["test.db"]}}}"#;
+        std::fs::write(servers_dir.join(".mcp.json"), mcp_json).unwrap();
+
+        let mut manifest = make_manifest_with_commands(vec![]);
+        let mut servers = HashMap::new();
+        servers.insert(
+            "db".into(),
+            McpServerEntry::FilePath("servers/.mcp.json".into()),
+        );
+        manifest.mcp_servers = Some(servers);
+
+        let result = extract_mcp_servers(&manifest, &plugin_dir);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("db"));
+        assert_eq!(result["db"].command.as_deref(), Some("sqlite3"));
+    }
+
+    #[test]
+    fn test_extract_mcp_servers_file_path_not_found() {
+        let dir = tempdir().unwrap();
+        let mut manifest = make_manifest_with_commands(vec![]);
+        let mut servers = HashMap::new();
+        servers.insert(
+            "missing".into(),
+            McpServerEntry::FilePath("nonexistent/.mcp.json".into()),
+        );
+        manifest.mcp_servers = Some(servers);
+
+        let result = extract_mcp_servers(&manifest, dir.path());
         assert!(result.is_empty());
     }
 
@@ -616,6 +700,7 @@ pub(crate) mod tests {
             skills_dirs: vec![],
             agents_dirs: vec![],
             mcp_servers: HashMap::new(),
+            data_path: PathBuf::new(),
         };
         p1.mcp_servers.insert(
             "db".into(),
@@ -640,6 +725,7 @@ pub(crate) mod tests {
             skills_dirs: vec![],
             agents_dirs: vec![],
             mcp_servers: HashMap::new(),
+            data_path: PathBuf::new(),
         };
         p2.mcp_servers.insert(
             "db".into(),
@@ -814,6 +900,7 @@ pub(crate) mod tests {
                 skills_dirs: vec![],
                 agents_dirs: vec![],
                 mcp_servers: HashMap::new(),
+                data_path: PathBuf::new(),
             },
             LoadedPlugin {
                 name: "p2".into(),
@@ -835,6 +922,7 @@ pub(crate) mod tests {
                 skills_dirs: vec![],
                 agents_dirs: vec![],
                 mcp_servers: HashMap::new(),
+                data_path: PathBuf::new(),
             },
         ];
 

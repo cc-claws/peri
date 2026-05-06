@@ -15,12 +15,13 @@ pub use client::{
     ServerInfo,
 };
 pub use config::{
-    load_merged_config, remove_server_from_config, set_server_disabled, ConfigSource,
+    expand_env_vars_with_context, expand_server_config_with_context, load_merged_config,
+    remove_server_from_config, server_config_hash, set_server_disabled, ConfigSource,
     McpConfigError, McpConfigFile, McpServerConfig, OAuthConfig,
 };
 pub use middleware::McpMiddleware;
 pub use oauth_flow::{OAuthCallbackResult, OAuthFlowError, OAuthFlowEvent, OAuthFlowManager};
 pub use resource_tool::McpResourceTool;
 pub use rmcp::model::{Resource, Tool};
-pub use tool_bridge::{build_tool_bridges, McpToolBridge, ToolCallError};
+pub use tool_bridge::{assemble_tool_pool, build_tool_bridges, McpToolBridge, ToolCallError};
 pub use transport::{TransportConfig, TransportError};

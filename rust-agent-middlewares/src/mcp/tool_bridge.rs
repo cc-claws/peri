@@ -169,6 +169,30 @@ pub fn build_tool_bridges(pool: &McpClientPool) -> Vec<Box<dyn BaseTool>> {
     bridges
 }
 
+/// 统一工具池组装：内置工具优先去重
+/// 内置工具名称优先级高于 MCP 工具（同名工具保留内置版本）
+pub fn assemble_tool_pool(
+    builtin_tools: Vec<Box<dyn BaseTool>>,
+    mcp_tools: Vec<Box<dyn BaseTool>>,
+) -> Vec<Box<dyn BaseTool>> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut result = Vec::new();
+
+    for tool in builtin_tools {
+        seen.insert(tool.name().to_string());
+        result.push(tool);
+    }
+
+    for tool in mcp_tools {
+        if !seen.contains(tool.name()) {
+            seen.insert(tool.name().to_string());
+            result.push(tool);
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

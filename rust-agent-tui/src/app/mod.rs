@@ -319,7 +319,6 @@ impl App {
     /// 后台初始化 MCP 连接池（不阻塞 UI），在 run_app 中 App::new() 之后调用
     pub fn spawn_mcp_init(&mut self) {
         use rust_agent_middlewares::mcp::{McpClientPool, McpInitStatus};
-        use rust_agent_middlewares::plugin::loader;
 
         let pool = Arc::new(McpClientPool::new_pending());
         self.mcp_pool = Some(pool.clone());
@@ -346,20 +345,17 @@ impl App {
                 }
             });
 
-        // 加载插件的 MCP 服务器（静默失败，避免打印错误日志）
         let claude_home = dirs_next::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join(".claude");
-        let plugin_mcp_servers =
-            loader::load_enabled_plugins_aggregated(&claude_home).all_mcp_servers;
 
         tokio::spawn(async move {
             McpClientPool::run_initialize(
                 pool,
                 std::path::Path::new(&cwd),
+                &claude_home,
                 init_tx,
                 Some(oauth_cb),
-                plugin_mcp_servers,
             )
             .await;
         });

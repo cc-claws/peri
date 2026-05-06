@@ -49,6 +49,7 @@ mod tests {
             skills_dirs: vec![],
             agents_dirs: vec![],
             mcp_servers: HashMap::new(),
+            data_path: PathBuf::new(),
         }
     }
 

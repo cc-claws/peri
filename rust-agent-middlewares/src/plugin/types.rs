@@ -3,6 +3,46 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// plugin.json 中 mcpServers 字段的值：内联配置对象或文件路径引用
+#[derive(Debug, Clone)]
+pub enum McpServerEntry {
+    /// 内联 MCP 服务器配置
+    Config(Box<McpServerConfig>),
+    /// .mcp.json 文件路径（相对于插件根目录）
+    FilePath(String),
+}
+
+impl Serialize for McpServerEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            McpServerEntry::Config(cfg) => cfg.serialize(serializer),
+            McpServerEntry::FilePath(path) => serializer.serialize_str(path),
+        }
+    }
+}
+
+impl McpServerEntry {
+    /// 如果是内联配置，返回内部 McpServerConfig 的引用
+    pub fn as_config(&self) -> Option<&McpServerConfig> {
+        match self {
+            McpServerEntry::Config(cfg) => Some(cfg),
+            McpServerEntry::FilePath(_) => None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for McpServerEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(s) = value.as_str() {
+            return Ok(McpServerEntry::FilePath(s.to_string()));
+        }
+        let config: McpServerConfig =
+            serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(McpServerEntry::Config(Box::new(config)))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginAuthor {
     pub name: String,
@@ -63,7 +103,7 @@ pub struct PluginManifest {
     /// 预留字段，本次不实现
     pub hooks: Option<serde_json::Value>,
     #[serde(rename = "mcpServers")]
-    pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
+    pub mcp_servers: Option<HashMap<String, McpServerEntry>>,
     #[serde(rename = "lspServers")]
     pub lsp_servers: Option<Vec<PluginLspServer>>,
     #[serde(rename = "outputStyles")]
@@ -345,10 +385,12 @@ mod tests {
         assert_eq!(manifest.skills.as_ref().unwrap().len(), 1);
         assert!(manifest.mcp_servers.is_some());
         let mcp = manifest.mcp_servers.as_ref().unwrap();
-        assert_eq!(
-            mcp.get("test-server").unwrap().command.as_deref(),
-            Some("node")
-        );
+        match mcp.get("test-server").unwrap() {
+            McpServerEntry::Config(cfg) => {
+                assert_eq!(cfg.command.as_deref(), Some("node"));
+            }
+            McpServerEntry::FilePath(_) => panic!("expected Config variant"),
+        }
         assert_eq!(manifest.lsp_servers.as_ref().unwrap().len(), 1);
         assert_eq!(manifest.channels.as_ref().unwrap().len(), 1);
         assert_eq!(manifest.options.as_ref().unwrap().len(), 1);
@@ -360,7 +402,36 @@ mod tests {
         let manifest: PluginManifest = serde_json::from_str(json).unwrap();
         let servers = manifest.mcp_servers.unwrap();
         assert!(servers.contains_key("srv"));
-        assert_eq!(servers["srv"].command.as_deref(), Some("cmd"));
+        match &servers["srv"] {
+            McpServerEntry::Config(cfg) => {
+                assert_eq!(cfg.command.as_deref(), Some("cmd"));
+            }
+            McpServerEntry::FilePath(_) => panic!("expected Config variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_entry_file_path() {
+        let json = r#"{"name":"p","version":"1.0.0","mcpServers":{"srv":"./path/to/.mcp.json"}}"#;
+        let manifest: PluginManifest = serde_json::from_str(json).unwrap();
+        let servers = manifest.mcp_servers.unwrap();
+        match servers.get("srv").unwrap() {
+            McpServerEntry::FilePath(path) => assert_eq!(path, "./path/to/.mcp.json"),
+            McpServerEntry::Config(_) => panic!("expected FilePath variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_entry_inline_config() {
+        let json = r#"{"name":"p","version":"1.0.0","mcpServers":{"srv":{"command":"node","args":["server.js"]}}}"#;
+        let manifest: PluginManifest = serde_json::from_str(json).unwrap();
+        let servers = manifest.mcp_servers.unwrap();
+        match servers.get("srv").unwrap() {
+            McpServerEntry::Config(cfg) => {
+                assert_eq!(cfg.command.as_deref(), Some("node"));
+            }
+            McpServerEntry::FilePath(_) => panic!("expected Config variant"),
+        }
     }
 
     #[test]

@@ -117,17 +117,11 @@ impl McpClientPool {
     pub async fn run_initialize(
         pool: Arc<Self>,
         cwd: &Path,
+        claude_home: &Path,
         status_tx: tokio::sync::watch::Sender<McpInitStatus>,
         oauth_event_callback: Option<Box<dyn Fn(OAuthFlowEvent) + Send + Sync>>,
-        plugin_mcp_servers: std::collections::HashMap<String, super::McpServerConfig>,
     ) {
-        let mut config = super::load_merged_config(cwd);
-        // 合并插件提供的 MCP 服务器
-        for (name, server_config) in plugin_mcp_servers {
-            let mut cfg = server_config;
-            cfg.source = Some(super::ConfigSource::Plugin);
-            config.mcp_servers.insert(name, cfg);
-        }
+        let config = super::load_merged_config(cwd, claude_home);
         let connectable = config
             .mcp_servers
             .iter()
@@ -848,9 +842,10 @@ impl McpClientPool {
 
     pub async fn initialize(
         cwd: &Path,
+        claude_home: &Path,
         oauth_event_callback: Option<Box<dyn Fn(OAuthFlowEvent) + Send + Sync>>,
     ) -> Self {
-        let config = super::load_merged_config(cwd);
+        let config = super::load_merged_config(cwd, claude_home);
         let pool = Arc::new(Self::new_pending());
         let token_store = Arc::new(FileCredentialStore::new());
         let mut oauth_manager: Option<OAuthFlowManager> =

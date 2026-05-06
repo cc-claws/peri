@@ -144,8 +144,40 @@ pub fn load_global_config(settings_json_path: &Path) -> Result<McpConfigFile, Mc
     Ok(config)
 }
 
-/// 展开 s 中所有 ${VAR} 占位符为环境变量值
-pub fn expand_env_vars(s: &str) -> String {
+/// 基于 command+args+env 计算服务器配置的内容 hash，用于去重
+pub fn server_config_hash(cfg: &McpServerConfig) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    if let Some(cmd) = &cfg.command {
+        cmd.hash(&mut hasher);
+    }
+    if let Some(args) = &cfg.args {
+        args.hash(&mut hasher);
+    }
+    if let Some(env) = &cfg.env {
+        let mut sorted: Vec<_> = env.iter().collect();
+        sorted.sort_by_key(|(k, _)| *k);
+        for (k, v) in sorted {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// 展开 s 中所有变量占位符，支持插件上下文：
+/// - ${CLAUDE_PLUGIN_ROOT}: 替换为 plugin_install_path
+/// - ${CLAUDE_PLUGIN_DATA}: 替换为 plugin_data_path
+/// - ${user_config.X}: 从 user_config HashMap 中查找
+/// - ${VAR}: 系统环境变量（fallback）
+pub fn expand_env_vars_with_context(
+    s: &str,
+    plugin_install_path: Option<&Path>,
+    plugin_data_path: Option<&Path>,
+    user_config: Option<&HashMap<String, String>>,
+) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -155,16 +187,33 @@ pub fn expand_env_vars(s: &str) -> String {
             if chars.peek() == Some(&'}') {
                 chars.next(); // 消耗 '}'
             }
-            match std::env::var(&var_name) {
-                Ok(val) => result.push_str(&val),
-                Err(_) => {
-                    tracing::warn!(
-                        var_name = %var_name,
-                        "MCP 配置环境变量 ${{{}}} 未设置，替换为空字符串",
-                        var_name
-                    );
+            let value = if var_name == "CLAUDE_PLUGIN_ROOT" {
+                plugin_install_path
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            } else if var_name == "CLAUDE_PLUGIN_DATA" {
+                plugin_data_path
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            } else if let Some(key) = var_name.strip_prefix("user_config.") {
+                user_config
+                    .and_then(|uc| uc.get(key))
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                match std::env::var(&var_name) {
+                    Ok(val) => val,
+                    Err(_) => {
+                        tracing::warn!(
+                            var_name = %var_name,
+                            "MCP 配置环境变量 ${{{}}} 未设置，替换为空字符串",
+                            var_name
+                        );
+                        String::new()
+                    }
                 }
-            }
+            };
+            result.push_str(&value);
         } else {
             result.push(c);
         }
@@ -172,29 +221,40 @@ pub fn expand_env_vars(s: &str) -> String {
     result
 }
 
-/// 对 McpServerConfig 中所有字符串字段执行环境变量展开
-pub fn expand_server_config(config: &McpServerConfig) -> McpServerConfig {
+/// 展开 s 中所有 ${VAR} 占位符为环境变量值（无插件上下文）
+pub fn expand_env_vars(s: &str) -> String {
+    expand_env_vars_with_context(s, None, None, None)
+}
+
+/// 对 McpServerConfig 中所有字符串字段执行环境变量展开（带插件上下文）
+pub fn expand_server_config_with_context(
+    config: &McpServerConfig,
+    plugin_install_path: Option<&Path>,
+    plugin_data_path: Option<&Path>,
+    user_config: Option<&HashMap<String, String>>,
+) -> McpServerConfig {
+    let expand = |s: &str| -> String {
+        expand_env_vars_with_context(s, plugin_install_path, plugin_data_path, user_config)
+    };
     McpServerConfig {
-        command: config.command.as_ref().map(|s| expand_env_vars(s)),
+        command: config.command.as_ref().map(|s| expand(s)),
         args: config
             .args
             .as_ref()
-            .map(|arr| arr.iter().map(|s| expand_env_vars(s)).collect()),
-        env: config.env.as_ref().map(|map| {
-            map.iter()
-                .map(|(k, v)| (k.clone(), expand_env_vars(v)))
-                .collect()
-        }),
-        url: config.url.as_ref().map(|s| expand_env_vars(s)),
-        headers: config.headers.as_ref().map(|map| {
-            map.iter()
-                .map(|(k, v)| (k.clone(), expand_env_vars(v)))
-                .collect()
-        }),
+            .map(|arr| arr.iter().map(|s| expand(s)).collect()),
+        env: config
+            .env
+            .as_ref()
+            .map(|map| map.iter().map(|(k, v)| (k.clone(), expand(v))).collect()),
+        url: config.url.as_ref().map(|s| expand(s)),
+        headers: config
+            .headers
+            .as_ref()
+            .map(|map| map.iter().map(|(k, v)| (k.clone(), expand(v))).collect()),
         oauth: config.oauth.as_ref().map(|o| OAuthConfig {
             enabled: o.enabled,
             client_id: o.client_id.clone(),
-            client_secret: o.client_secret.as_ref().map(|s| expand_env_vars(s)),
+            client_secret: o.client_secret.as_ref().map(|s| expand(s)),
             scopes: o.scopes.clone(),
         }),
         disabled: config.disabled,
@@ -202,10 +262,17 @@ pub fn expand_server_config(config: &McpServerConfig) -> McpServerConfig {
     }
 }
 
-/// 加载并合并 MCP 配置：全局 settings.json + 项目级 .mcp.json
-/// 同名 server 以项目级覆盖全局，所有字段执行 ${VAR} 展开
-pub fn load_merged_config(cwd: &Path) -> McpConfigFile {
-    // 1. 加载全局配置
+/// 对 McpServerConfig 中所有字符串字段执行环境变量展开（无插件上下文）
+pub fn expand_server_config(config: &McpServerConfig) -> McpServerConfig {
+    expand_server_config_with_context(config, None, None, None)
+}
+
+/// 加载并合并 MCP 配置：全局 + 插件 + 项目级三层合并
+/// 优先级：global < plugin < project（项目级最高）
+/// 内容 hash 去重：手动配置（global/project）覆盖插件配置
+/// 所有字段执行 ${VAR} 展开，插件来源额外支持 ${CLAUDE_PLUGIN_ROOT} 等上下文变量
+pub fn load_merged_config(cwd: &Path, claude_home: &Path) -> McpConfigFile {
+    // 1. 加载全局配置（~/.zen-code/settings.json）
     let global_path = dirs_next::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".zen-code")
@@ -218,12 +285,29 @@ pub fn load_merged_config(cwd: &Path) -> McpConfigFile {
         );
         McpConfigFile::default()
     });
-    // 标记全局 servers 来源
     for cfg in global.mcp_servers.values_mut() {
         cfg.source = Some(ConfigSource::Global(global_path.clone()));
     }
 
-    // 2. 加载项目级配置
+    // 2. 加载插件 MCP 配置（~/.claude/ 目录下的已启用插件）
+    let plugin_load_result = crate::plugin::loader::load_enabled_plugins_aggregated(claude_home);
+    let mut plugin_servers: HashMap<
+        String,
+        (McpServerConfig, std::path::PathBuf, std::path::PathBuf),
+    > = HashMap::new();
+    for plugin in &plugin_load_result.plugins {
+        for (name, config) in &plugin.mcp_servers {
+            let namespaced = format!("plugin:{}:{}", plugin.name, name);
+            let mut cfg = config.clone();
+            cfg.source = Some(ConfigSource::Plugin);
+            plugin_servers.insert(
+                namespaced,
+                (cfg, plugin.install_path.clone(), plugin.data_path.clone()),
+            );
+        }
+    }
+
+    // 3. 加载项目级配置（{cwd}/.mcp.json）
     let project_path = cwd.join(".mcp.json");
     let mut project = load_from_path(&project_path).unwrap_or_else(|e| {
         tracing::warn!(
@@ -233,44 +317,60 @@ pub fn load_merged_config(cwd: &Path) -> McpConfigFile {
         );
         McpConfigFile::default()
     });
-    // 标记项目 servers 来源
     for cfg in project.mcp_servers.values_mut() {
         cfg.source = Some(ConfigSource::Project(project_path.clone()));
     }
 
-    // 3. 合并：项目级覆盖全局
+    // 4. 内容 hash 去重：移除与手动配置（global/project）内容相同的插件服务器
+    let manual_hashes: std::collections::HashSet<u64> = global
+        .mcp_servers
+        .values()
+        .chain(project.mcp_servers.values())
+        .map(server_config_hash)
+        .collect();
+    plugin_servers.retain(|_, (cfg, _, _)| {
+        let hash = server_config_hash(cfg);
+        if manual_hashes.contains(&hash) {
+            tracing::debug!("插件 MCP 服务器与手动配置内容相同（hash 去重），已跳过");
+            false
+        } else {
+            true
+        }
+    });
+
+    // 5. 三层合并：global → plugin → project
     let mut merged = global;
+    for (name, (cfg, _, _)) in &plugin_servers {
+        merged.mcp_servers.insert(name.clone(), cfg.clone());
+    }
     for (name, server_config) in project.mcp_servers {
         merged.mcp_servers.insert(name, server_config);
     }
 
-    // 4. 环境变量展开
+    // 6. 变量展开：插件来源使用 context-expand，其他使用普通 expand
     let names: Vec<String> = merged.mcp_servers.keys().cloned().collect();
     for name in names {
         if let Some(server_config) = merged.mcp_servers.get(&name).cloned() {
-            merged
-                .mcp_servers
-                .insert(name, expand_server_config(&server_config));
+            let expanded = if matches!(server_config.source, Some(ConfigSource::Plugin)) {
+                // 插件来源：使用上下文展开
+                if let Some((_, install_path, data_path)) = plugin_servers.get(&name) {
+                    expand_server_config_with_context(
+                        &server_config,
+                        Some(install_path),
+                        Some(data_path),
+                        None,
+                    )
+                } else {
+                    expand_server_config(&server_config)
+                }
+            } else {
+                expand_server_config(&server_config)
+            };
+            merged.mcp_servers.insert(name, expanded);
         }
     }
 
     merged
-}
-
-/// 将插件提供的 MCP 服务器合并到已有配置中
-/// 服务器名称格式为 `plugin:{plugin_name}:{server_name}`，与 Claude Code 一致
-pub fn merge_plugin_servers(
-    mut config: McpConfigFile,
-    plugin_name: &str,
-    servers: &HashMap<String, McpServerConfig>,
-) -> McpConfigFile {
-    for (server_name, server_config) in servers {
-        let namespaced_name = format!("plugin:{}:{}", plugin_name, server_name);
-        let mut cfg = server_config.clone();
-        cfg.source = Some(ConfigSource::Plugin);
-        config.mcp_servers.insert(namespaced_name, cfg);
-    }
-    config
 }
 
 /// 原子写入 JSON 文件（先写临时文件，再 rename 替换）
@@ -792,42 +892,80 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_plugin_servers_namespaced() {
-        let config = McpConfigFile::default();
-        let mut servers = HashMap::new();
-        servers.insert("db".to_string(), test_config());
-        let result = merge_plugin_servers(config, "my-plugin", &servers);
-        assert!(result.mcp_servers.contains_key("plugin:my-plugin:db"));
-        assert_eq!(result.mcp_servers.len(), 1);
+    fn test_server_config_hash_deterministic() {
+        let cfg = McpServerConfig {
+            command: Some("node".into()),
+            args: Some(vec!["server.js".into()]),
+            env: Some(HashMap::from([("KEY".into(), "val".into())])),
+            ..test_config()
+        };
+        let h1 = server_config_hash(&cfg);
+        let h2 = server_config_hash(&cfg);
+        assert_eq!(h1, h2);
     }
 
     #[test]
-    fn test_merge_plugin_servers_preserves_existing() {
-        let mut config = McpConfigFile::default();
-        config.mcp_servers.insert("db".to_string(), test_config());
-        let mut servers = HashMap::new();
-        servers.insert("db".to_string(), test_config());
-        let result = merge_plugin_servers(config, "my-plugin", &servers);
-        assert!(
-            result.mcp_servers.contains_key("db"),
-            "original db should be preserved"
-        );
-        assert!(
-            result.mcp_servers.contains_key("plugin:my-plugin:db"),
-            "namespaced db should exist"
-        );
-        assert_eq!(result.mcp_servers.len(), 2);
+    fn test_server_config_hash_differs_on_command() {
+        let a = McpServerConfig {
+            command: Some("node".into()),
+            ..test_config()
+        };
+        let b = McpServerConfig {
+            command: Some("python".into()),
+            ..test_config()
+        };
+        assert_ne!(server_config_hash(&a), server_config_hash(&b));
     }
 
     #[test]
-    fn test_merge_plugin_servers_source_tag() {
-        let config = McpConfigFile::default();
-        let mut servers = HashMap::new();
-        servers.insert("db".to_string(), test_config());
-        let result = merge_plugin_servers(config, "my-plugin", &servers);
-        assert_eq!(
-            result.mcp_servers["plugin:my-plugin:db"].source,
-            Some(ConfigSource::Plugin),
+    fn test_server_config_hash_differs_on_args() {
+        let a = McpServerConfig {
+            command: Some("node".into()),
+            args: Some(vec!["a.js".into()]),
+            ..test_config()
+        };
+        let b = McpServerConfig {
+            command: Some("node".into()),
+            args: Some(vec!["b.js".into()]),
+            ..test_config()
+        };
+        assert_ne!(server_config_hash(&a), server_config_hash(&b));
+    }
+
+    #[test]
+    fn test_expand_env_vars_with_context_plugin_root() {
+        let result = expand_env_vars_with_context(
+            "${CLAUDE_PLUGIN_ROOT}/server.js",
+            Some(Path::new("/plugins/my-plugin")),
+            None,
+            None,
         );
+        assert_eq!(result, "/plugins/my-plugin/server.js");
+    }
+
+    #[test]
+    fn test_expand_env_vars_with_context_plugin_data() {
+        let result = expand_env_vars_with_context(
+            "${CLAUDE_PLUGIN_DATA}/cache",
+            None,
+            Some(Path::new("/plugins/my-plugin/.claude-plugin/data")),
+            None,
+        );
+        assert_eq!(result, "/plugins/my-plugin/.claude-plugin/data/cache");
+    }
+
+    #[test]
+    fn test_expand_env_vars_with_context_user_config() {
+        let uc = HashMap::from([("apiKey".into(), "sk-123".into())]);
+        let result = expand_env_vars_with_context("${user_config.apiKey}", None, None, Some(&uc));
+        assert_eq!(result, "sk-123");
+    }
+
+    #[test]
+    fn test_expand_env_vars_with_context_fallback_to_env() {
+        std::env::set_var("TEST_MCP_CTX_VAR", "hello");
+        let result = expand_env_vars_with_context("${TEST_MCP_CTX_VAR}", None, None, None);
+        assert_eq!(result, "hello");
+        std::env::remove_var("TEST_MCP_CTX_VAR");
     }
 }

@@ -27,6 +27,6 @@ pub use marketplace::{
 pub use middleware::PluginMiddleware;
 pub use types::{
     InstallScope, InstalledPlugin, InstalledPlugins, KnownMarketplace, MarketplaceManifest,
-    MarketplacePlugin, MarketplaceSource, PluginAgent, PluginAuthor, PluginChannel, PluginCommand,
-    PluginLspServer, PluginManifest, PluginOption,
+    MarketplacePlugin, MarketplaceSource, McpServerEntry, PluginAgent, PluginAuthor, PluginChannel,
+    PluginCommand, PluginLspServer, PluginManifest, PluginOption,
 };
