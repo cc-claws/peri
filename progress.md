@@ -1,5 +1,9 @@
 # Design Review Progress
 
+## 2026-05-07 第41轮：widgets 死代码删除 + compact re-export 收紧
+
+删除 perihelion-widgets/render_state.rs 中 TableBuilder::render 方法（58 行，被 render_with_wrap 替代）和 make_data_line 函数（57 行，仅被已删除的 render 调用），共净减 115 行 #[allow(dead_code)] 标记的死代码。移除 compact/mod.rs 中 group_messages_by_round、adjust_index_to_preserve_invariants、MessageRound 三项无外部调用者的 re-export。全量测试通过，编译零警告。
+
 ## 2026-05-07 第40轮：MCP 模块 API 可见性收紧 + 死代码清除
 
 将 mcp 模块中 10 个内部函数从 pub 收紧为 pub(crate)或 cfg(test)：config.rs 6 个（load_from_path/load_global_config/server_config_hash/expand_env_vars/expand_server_config_with_context/expand_server_config）、transport.rs build_transport、tool_bridge.rs assemble_tool_pool、callback_server.rs parse_callback_url。删除 assemble_tool_pool 死代码（22 行）和 build_transport 包装函数（测试改用 try_from）。移除 mod.rs 中 TransportConfig/TransportError 等 5 项无用 re-export。净减 27 行，编译零警告。
