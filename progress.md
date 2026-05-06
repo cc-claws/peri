@@ -1,5 +1,9 @@
 # Design Review Progress
 
+## 2026-05-07 第40轮：MCP 模块 API 可见性收紧 + 死代码清除
+
+将 mcp 模块中 10 个内部函数从 pub 收紧为 pub(crate)或 cfg(test)：config.rs 6 个（load_from_path/load_global_config/server_config_hash/expand_env_vars/expand_server_config_with_context/expand_server_config）、transport.rs build_transport、tool_bridge.rs assemble_tool_pool、callback_server.rs parse_callback_url。删除 assemble_tool_pool 死代码（22 行）和 build_transport 包装函数（测试改用 try_from）。移除 mod.rs 中 TransportConfig/TransportError 等 5 项无用 re-export。净减 27 行，编译零警告。
+
 ## 2026-05-07 第39轮：plugin installer 测试补充 + loader 可见性收紧 + 警告消除
 
 为 cleanup_orphaned_plugins 补充 6 个异步测试覆盖完整生命周期（无缓存、旧孤儿删除、近期保留、已安装保护、空目录清理、无标记不删除）；为 sanitize_plugin_id 补充 3 个测试、match_project_path 补充 6 个测试。将 loader 中 4 个 extract_* 函数从 pub 收紧为 pub(crate)，移除 mod.rs 中未使用 re-export。声明 integration feature 消除 unexpected_cfgs 警告。测试总数 478。
