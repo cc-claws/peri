@@ -601,7 +601,7 @@ impl App {
         panel.discover_plugins = discover_plugins;
         panel.marketplace_entries = marketplace_view_entries;
 
-        self.open_panel(PanelState::Plugin(panel));
+        self.open_panel(PanelState::Plugin(Box::new(panel)));
 
         let _ = cache_base;
         let _ = claude_dir;

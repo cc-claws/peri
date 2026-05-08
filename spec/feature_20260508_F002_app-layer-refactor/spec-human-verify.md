@@ -21,13 +21,13 @@
 
 ### 场景 1：编译与基础设施
 
-#### - [ ] 1.1 构建零错误
+#### - [x] 1.1 构建零错误
 - **来源:** spec-plan-1.md Task 0 / spec-plan-2.md Task 0
 - **目的:** 确认构建工具链可用
 - **操作步骤:**
   1. [A] `cargo build -p rust-agent-tui 2>&1 | grep -c "error"` → 期望精确: `0`
 
-#### - [ ] 1.2 现有测试全通过
+#### - [x] 1.2 现有测试全通过
 - **来源:** spec-plan-1.md Task 0 / spec-plan-2.md Task 0
 - **目的:** 确认测试基线无回归
 - **操作步骤:**
@@ -37,37 +37,37 @@
 
 ### 场景 2：ServiceRegistry 提取（Task 1）
 
-#### - [ ] 2.1 App 旧字段已删除
+#### - [x] 2.1 App 旧字段已删除
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认 cwd 等字段已移入 ServiceRegistry
 - **操作步骤:**
   1. [A] `grep -n "pub cwd:" rust-agent-tui/src/app/mod.rs | head -5` → 期望精确: ``（空输出）
 
-#### - [ ] 2.2 App 字段数减少至预期
+#### - [x] 2.2 App 字段数减少至预期
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认 App 从 26 字段降至约 7 字段
 - **操作步骤:**
   1. [A] `grep -E "^\s+pub [a-z_]+:" rust-agent-tui/src/app/mod.rs | wc -l` → 期望精确: `7`
 
-#### - [ ] 2.3 无残留 app.xxx 旧路径
+#### - [x] 2.3 无残留 app.xxx 旧路径
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认所有旧 service 字段已迁移到 app.services.xxx
 - **操作步骤:**
   1. [A] `grep -rn "app\.zen_config\|app\.cwd\b\|app\.provider_name\|app\.model_name\|app\.permission_mode\|app\.thread_store\|app\.mcp_pool\|app\.mcp_init_rx\|app\.cron\b\|app\.plugin_data\|app\.bg_event_tx\|app\.bg_event_rx\|app\.config_path_override\|app\.claude_settings_override\|app\.setup_wizard\|app\.oauth_prompt\|app\.mode_highlight\|app\.model_highlight\|app\.mcp_ready_shown\|app\.quit_pending" rust-agent-tui/src/ | grep -v "app\.services\." | grep -v "spec-plan"` → 期望精确: ``（空输出）
 
-#### - [ ] 2.4 无残留 self.xxx 旧路径（app/ 目录内）
+#### - [x] 2.4 无残留 self.xxx 旧路径（app/ 目录内）
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认 app/ 目录内旧 self.xxx 已迁移到 self.services.xxx
 - **操作步骤:**
   1. [A] `grep -rn "self\.zen_config\|self\.cwd\b\|self\.provider_name\|self\.model_name\|self\.permission_mode\|self\.thread_store\|self\.mcp_pool\|self\.mcp_init_rx\|self\.cron\b\|self\.plugin_data\|self\.bg_event_tx\|self\.bg_event_rx\|self\.config_path_override\|self\.claude_settings_override\|self\.setup_wizard\|self\.oauth_prompt\|self\.mode_highlight\|self\.model_highlight\|self\.mcp_ready_shown\|self\.quit_pending" rust-agent-tui/src/app/ | grep -v "self\.services\."` → 期望精确: ``（空输出）
 
-#### - [ ] 2.5 ServiceRegistry 单元测试通过
+#### - [x] 2.5 ServiceRegistry 单元测试通过
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认 ServiceRegistry 有基本测试覆盖
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui --lib -- service_registry 2>&1 | tail -10` → 期望包含: `test result: ok`
 
-#### - [ ] 2.6 Headless 测试通过
+#### - [x] 2.6 Headless 测试通过
 - **来源:** spec-plan-1.md Task 1 检查步骤
 - **目的:** 确认 headless 测试随 ServiceRegistry 迁移无回归
 - **操作步骤:**
@@ -77,31 +77,31 @@
 
 ### 场景 3：SessionManager 提取（Task 2）
 
-#### - [ ] 3.1 无残留 app.sessions 直接访问
+#### - [x] 3.1 无残留 app.sessions 直接访问
 - **来源:** spec-plan-1.md Task 2 检查步骤
 - **目的:** 确认 sessions 已迁移到 session_mgr
 - **操作步骤:**
   1. [A] `grep -rn 'app\.sessions\b' rust-agent-tui/src/ | grep -v 'session_mgr' | grep -v '//.*app\.sessions' | wc -l` → 期望精确: `0`
 
-#### - [ ] 3.2 无残留 app.active 直接赋值
+#### - [x] 3.2 无残留 app.active 直接赋值
 - **来源:** spec-plan-1.md Task 2 检查步骤
 - **目的:** 确认 active 已迁移到 session_mgr
 - **操作步骤:**
   1. [A] `grep -rn 'app\.active\s*=' rust-agent-tui/src/ | grep -v 'session_mgr' | wc -l` → 期望精确: `0`
 
-#### - [ ] 3.3 无残留 app.session_areas 直接访问
+#### - [x] 3.3 无残留 app.session_areas 直接访问
 - **来源:** spec-plan-1.md Task 2 检查步骤
 - **目的:** 确认 session_areas 已迁移到 session_mgr
 - **操作步骤:**
   1. [A] `grep -rn 'app\.session_areas' rust-agent-tui/src/ | grep -v 'session_mgr' | wc -l` → 期望精确: `0`
 
-#### - [ ] 3.4 SessionManager 单元测试通过
+#### - [x] 3.4 SessionManager 单元测试通过
 - **来源:** spec-plan-1.md Task 2 检查步骤
 - **目的:** 确认 SessionManager current/len 等方法正确
 - **操作步骤:**
   1. [A] `cargo test -p rust-agent-tui --lib -- session_manager 2>&1 | tail -10` → 期望包含: `test result: ok`
 
-#### - [ ] 3.5 Headless 测试通过
+#### - [x] 3.5 Headless 测试通过
 - **来源:** spec-plan-1.md Task 2 检查步骤
 - **目的:** 确认 SessionManager 迁移无回归
 - **操作步骤:**

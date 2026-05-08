@@ -184,10 +184,10 @@ fn render_session_column(
             popups::oauth::render_oauth_popup(f, app, panel_area);
         }
         // PanelManager 统一渲染分发：session 面板优先，global 面板次之
-        if !app.session_mgr.sessions[session_idx]
+        if app.session_mgr.sessions[session_idx]
             .agent
             .interaction_prompt
-            .is_some()
+            .is_none()
             && app.services.oauth_prompt.is_none()
         {
             if app.session_mgr.sessions[session_idx]

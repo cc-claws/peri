@@ -458,7 +458,7 @@ impl crate::app::App {
 
     /// 手动触发当前选中服务器的 OAuth 授权流程
     pub fn mcp_panel_request_oauth(&mut self) {
-        if let Some(ref panel) = self.global_panels.get::<McpPanel>() {
+        if let Some(panel) = self.global_panels.get::<McpPanel>() {
             if !panel.view.is_server_list() {
                 return;
             }

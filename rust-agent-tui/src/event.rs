@@ -279,16 +279,13 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                     // dispatch_key(&self, &mut PanelContext) 需要 &self + &mut App 内的字段，
                     // Rust 借用检查器无法证明两者不重叠。take 后归还，语义等价。
                     // TODO: 若重构 dispatch 签名为独立 &mut 参数可消除此 workaround。
-                    let mut pm = std::mem::replace(
-                        &mut app.session_mgr.sessions[active_idx].session_panels,
-                        crate::app::PanelManager::new(),
-                    );
+                    let mut pm =
+                        std::mem::take(&mut app.session_mgr.sessions[active_idx].session_panels);
                     let mut ctx = PanelContext {
                         services: &mut app.services,
                         session_mgr: &mut app.session_mgr,
                     };
                     let result = pm.dispatch_key(input, &mut ctx);
-                    drop(ctx);
                     match result {
                         EventResult::ClosePanel => {
                             pm.close();
@@ -328,14 +325,12 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 ) {
                     let active_idx = app.session_mgr.active;
                     // SAFETY: 同上，global_panels 嵌套在 App 内，dispatch_key 需 &mut App 字段
-                    let mut pm =
-                        std::mem::replace(&mut app.global_panels, crate::app::PanelManager::new());
+                    let mut pm = std::mem::take(&mut app.global_panels);
                     let mut ctx = PanelContext {
                         services: &mut app.services,
                         session_mgr: &mut app.session_mgr,
                     };
                     let result = pm.dispatch_key(input, &mut ctx);
-                    drop(ctx);
                     match result {
                         EventResult::ClosePanel => {
                             pm.close();
@@ -345,7 +340,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                                 .clear();
                             app.session_mgr.sessions[active_idx].ui.panel_area = None;
                         }
-                        EventResult::OpenPanel(open_kind) if open_kind == PanelKind::Memory => {
+                        EventResult::OpenPanel(PanelKind::Memory) => {
                             app.global_panels = pm;
                             if let Err(e) = app.memory_panel_open_editor() {
                                 tracing::error!("Failed to open editor: {}", e);
@@ -878,10 +873,8 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 ) {
                     let active_idx = app.session_mgr.active;
                     // SAFETY: 同上，session_panels 嵌套在 App 内，dispatch_paste 需 &mut App 字段
-                    let mut pm = std::mem::replace(
-                        &mut app.session_mgr.sessions[active_idx].session_panels,
-                        crate::app::PanelManager::new(),
-                    );
+                    let mut pm =
+                        std::mem::take(&mut app.session_mgr.sessions[active_idx].session_panels);
                     let mut ctx = PanelContext {
                         services: &mut app.services,
                         session_mgr: &mut app.session_mgr,
@@ -902,8 +895,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                         | Some(PanelKind::Plugin)
                 ) {
                     // SAFETY: 同上，global_panels 嵌套在 App 内，dispatch_paste 需 &mut App 字段
-                    let mut pm =
-                        std::mem::replace(&mut app.global_panels, crate::app::PanelManager::new());
+                    let mut pm = std::mem::take(&mut app.global_panels);
                     let mut ctx = PanelContext {
                         services: &mut app.services,
                         session_mgr: &mut app.session_mgr,

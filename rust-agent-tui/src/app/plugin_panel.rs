@@ -1760,7 +1760,9 @@ mod tests {
         ]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         for _ in 0..5 {
             app.plugin_panel_move_up();
@@ -1778,7 +1780,9 @@ mod tests {
         let panel = PluginPanel::new(vec![]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         app.plugin_panel_tab();
         assert_eq!(
@@ -1807,7 +1811,9 @@ mod tests {
         let panel = PluginPanel::new(vec![]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         app.plugin_panel_shift_tab();
         assert_eq!(
@@ -1826,7 +1832,9 @@ mod tests {
         let panel = PluginPanel::new(vec![]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
         app.plugin_panel_close();
         assert!(!app.global_panels.is_active(crate::app::PanelKind::Plugin));
     }
@@ -1836,7 +1844,9 @@ mod tests {
         let panel = PluginPanel::new(vec![make_entry("my-plugin@test", "my-plugin", true)]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         app.plugin_panel_request_delete();
         assert_eq!(
@@ -1861,7 +1871,9 @@ mod tests {
         let panel = PluginPanel::new(vec![make_entry("p@test", "p", true)]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         app.plugin_panel_toggle_enabled();
         assert!(!app.global_panels.get::<PluginPanel>().unwrap().entries[0].enabled);
@@ -1877,7 +1889,9 @@ mod tests {
         let panel = PluginPanel::new(vec![make_entry("good@t", "good-plugin", true), entry]);
         let (mut app, _handle) = crate::app::App::new_headless(80, 24).await;
         app.global_panels
-            .open(crate::app::panel_manager::PanelState::Plugin(panel));
+            .open(crate::app::panel_manager::PanelState::Plugin(Box::new(
+                panel,
+            )));
 
         // Default view (Installed): 2 items
         assert_eq!(

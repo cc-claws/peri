@@ -164,7 +164,7 @@ pub(crate) fn render_thread_browser(
     };
 
     // ── 1. 渲染搜索框（固定位置，不滚动） ──
-    render_search_box(f, &browser, search_area);
+    render_search_box(f, browser, search_area);
 
     // ── 2. 构建列表内容（纯 thread 列表 + 快捷键，无搜索框占位） ──
     let mut lines: Vec<Line> = Vec::new();

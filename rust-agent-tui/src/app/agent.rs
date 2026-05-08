@@ -530,6 +530,7 @@ fn map_executor_event(event: ExecutorEvent, cwd: &str) -> Option<AgentEvent> {
 // ─── 上下文压缩任务 ────────────────────────────────────────────────────────────
 
 /// 独立的上下文压缩异步任务：调用核心层 full_compact + re_inject 三阶段流程
+#[allow(clippy::too_many_arguments)]
 pub async fn compact_task(
     messages: Vec<rust_create_agent::messages::BaseMessage>,
     model: Box<dyn rust_create_agent::llm::BaseModel>,
