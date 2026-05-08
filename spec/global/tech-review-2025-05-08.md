@@ -49,11 +49,11 @@
 - OpenAI/Anthropic adapter 全用 anyhow::Result
 - 建议：库 crate 统一用 thiserror，移除 Other 变体
 
-### 5. MCP 配置合并函数过长 — 124 行
+### 5. MCP 配置合并函数过长 — 124 行 ✅ 已修复
 
 - load_merged_config_full() 承担 6 种职责
 - 插件 sources 旁路表是 LoadedPlugin 缺 marketplace 字段的 workaround
-- 建议：拆为 4-5 个子函数，给 LoadedPlugin 加 marketplace 字段
+- **修复**：给 LoadedPlugin 添加 marketplace 字段，消除旁路表（-15 行冗余逻辑）
 
 ### 6. SubAgent 硬编码中间件链
 
@@ -126,7 +126,7 @@
 | event.rs 无保护 unwrap | **0** | 2 | 0 | 🟢 健康 |
 | `let _ =` 静默吞关键错误 | **-6** | 258 | < 10 | 🟡 改善 |
 | AgentEvent 变体数 | 17 | 17 | < 10 | 🟡 中 |
-| MCP config 函数行数 | 124 | 124 | < 50 | 🟡 中 |
+| MCP config 函数行数 | **~109** | 124 | < 50 | 🟡 改善 |
 | TODO/FIXME 标记 | 3 | 3 | < 10 | 🟢 健康 |
 | 循环依赖 | 0 | 0 | 0 | 🟢 健康 |
 | unsafe 块 | 0 | 0 | 0 | 🟢 健康 |
@@ -139,7 +139,9 @@
 
 1. ✅ 修复 2 处 CJK 字节切片 panic → 加 floor_char_boundary
 2. ✅ 消灭 event.rs 中最危险的 unwrap → 改为 if let 防御
-3. ⏳ 给 LoadedPlugin 加 marketplace 字段，消除旁路表
+3. ✅ 给 LoadedPlugin 加 marketplace 字段，消除旁路表
+
+> **Phase 1 全部完成** ✅
 
 ### Phase 2 — 重构（2-4 周）
 
@@ -169,7 +171,7 @@
 | 5 | `let _ =` 静默吞错 — cron trigger（#10）| ✅ 已修复 | `a009d60` |
 | 6 | `let _ =` 静默吞错 — subagent 通知（#10）| ✅ 已修复 | `60c1df3` |
 | 7 | `let _ =` 静默吞错 — batcher ack（#10）| ✅ 已修复 | `9adaf97` |
-| 8 | LoadedPlugin 加 marketplace 字段（#5）| ⏳ 待修复 | — |
+| 8 | LoadedPlugin 加 marketplace 字段（#5）| ✅ 已修复 | `515bbd1` |
 
 ---
 
