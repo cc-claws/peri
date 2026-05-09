@@ -630,6 +630,9 @@ fn render_messages(f: &mut Frame, app: &mut App, header_area: Rect, messages_are
         let mut scrollbar_state =
             ScrollbarState::new(max_scroll as usize).position(offset as usize);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .track_symbol(None)
             .style(Style::default().fg(theme::MUTED));
         f.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
     }
@@ -679,13 +682,14 @@ fn render_attachment_bar(f: &mut Frame, app: &App, area: Rect) {
 
 /// 对一行的 spans 做字符级选区高亮。
 /// `char_start` / `char_end` 是该行 plain_text 的字符偏移（非 byte 索引）。
-/// 将 spans 中对应范围的字符的 style 追加 Modifier::REVERSED，范围外的 span 保持原样。
+/// 将 spans 中对应范围的字符的 style 追加淡蓝色背景（深色主题选区色），范围外的 span 保持原样。
 /// 使用 char_indices() 保证 unicode 安全切割。
 pub fn highlight_line_spans<'a>(
     spans: Vec<Span<'a>>,
     char_start: usize,
     char_end: usize,
 ) -> Vec<Span<'a>> {
+    let selection_style = Style::default().bg(theme::SELECTION_BG);
     let mut result = Vec::new();
     let mut cursor: usize = 0; // 当前在 plain_text 中的字符位置
     for span in spans {
@@ -697,8 +701,8 @@ pub fn highlight_line_spans<'a>(
             // 完全在选区外 → 保持原样
             result.push(span);
         } else if span_start >= char_start && span_end <= char_end {
-            // 完全在选区内 → 整个 span 反色
-            result.push(span.patch_style(Style::default().add_modifier(Modifier::REVERSED)));
+            // 完全在选区内 → 淡蓝色背景
+            result.push(span.patch_style(selection_style));
         } else {
             // 部分重叠 → 拆分为 2~3 个子 span
             // 左段（选区外）
@@ -715,7 +719,7 @@ pub fn highlight_line_spans<'a>(
                     span.style,
                 ));
             }
-            // 中段（选区内，反色）
+            // 中段（选区内，淡蓝色背景）
             let hl_char_start = span_start.max(char_start) - span_start;
             let hl_char_end = span_end.min(char_end) - span_start;
             let byte_start = span
@@ -732,7 +736,7 @@ pub fn highlight_line_spans<'a>(
                 .unwrap_or(span.content.len());
             result.push(Span::styled(
                 span.content[byte_start..byte_end].to_string(),
-                span.style.add_modifier(Modifier::REVERSED),
+                selection_style.patch(span.style),
             ));
             // 右段（选区外）
             if span_end > char_end {
@@ -758,23 +762,28 @@ pub fn highlight_line_spans<'a>(
 mod tests {
     use super::*;
 
+    /// 检查 span 是否有选区背景色
+    fn has_selection_bg(style: Style) -> bool {
+        matches!(style.bg, Some(theme::SELECTION_BG))
+    }
+
     #[test]
     fn test_highlight_line_spans_full_span() {
         let spans = vec![Span::from("Hello"), Span::from("World")];
         let result = highlight_line_spans(spans, 0, 10);
         assert_eq!(result.len(), 2);
-        assert!(result[0].style.add_modifier.contains(Modifier::REVERSED));
-        assert!(result[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(has_selection_bg(result[0].style));
+        assert!(has_selection_bg(result[1].style));
     }
 
     #[test]
     fn test_highlight_line_spans_partial_start() {
         let spans = vec![Span::from("Hello")];
         let result = highlight_line_spans(spans, 3, 10);
-        // 前 3 字符原样，后 2 字符反色
+        // 前 3 字符原样，后 2 字符选区背景
         assert_eq!(result.len(), 2);
-        assert!(!result[0].style.add_modifier.contains(Modifier::REVERSED));
-        assert!(result[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[0].style));
+        assert!(has_selection_bg(result[1].style));
         assert_eq!(result[0].content, "Hel");
         assert_eq!(result[1].content, "lo");
     }
@@ -785,11 +794,11 @@ mod tests {
         let result = highlight_line_spans(spans, 1, 4);
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].content, "H");
-        assert!(!result[0].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[0].style));
         assert_eq!(result[1].content, "ell");
-        assert!(result[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(has_selection_bg(result[1].style));
         assert_eq!(result[2].content, "o");
-        assert!(!result[2].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[2].style));
     }
 
     #[test]
@@ -797,18 +806,18 @@ mod tests {
         let spans = vec![Span::from("Hel"), Span::from("lo Wo"), Span::from("rld")];
         let result = highlight_line_spans(spans, 2, 8);
         // 选中范围 char 2..8 = "llo Wo"
-        // span0 "Hel": 前 2 原样 + 后 1 反色
-        // span1 "lo Wo": 全部反色
+        // span0 "Hel": 前 2 原样 + 后 1 选区背景
+        // span1 "lo Wo": 全部选区背景
         // span2 "rld": 不在选区（span2 starts at char 8）
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].content, "He");
-        assert!(!result[0].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[0].style));
         assert_eq!(result[1].content, "l");
-        assert!(result[1].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(has_selection_bg(result[1].style));
         assert_eq!(result[2].content, "lo Wo");
-        assert!(result[2].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(has_selection_bg(result[2].style));
         assert_eq!(result[3].content, "rld");
-        assert!(!result[3].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[3].style));
     }
 
     #[test]
@@ -816,7 +825,7 @@ mod tests {
         let spans = vec![Span::from("Hello")];
         let result = highlight_line_spans(spans, 10, 15);
         assert_eq!(result.len(), 1);
-        assert!(!result[0].style.add_modifier.contains(Modifier::REVERSED));
+        assert!(!has_selection_bg(result[0].style));
         assert_eq!(result[0].content, "Hello");
     }
 }

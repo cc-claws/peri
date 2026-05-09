@@ -162,62 +162,6 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                 return Ok(Some(Action::Redraw));
             }
 
-            // macOS: Cmd+C (Super+C) 复制选区文本（遵循系统剪贴板快捷键惯例）
-            // tui_textarea::Input 没有 super 字段，需在转换前从原始 key_event 检测。
-            if key_event.code == KeyCode::Char('c')
-                && key_event.modifiers.contains(KeyModifiers::SUPER)
-                && copy_selection_to_clipboard(app)
-            {
-                return Ok(Some(Action::Redraw));
-            }
-
-            // 全局复制：有选区时 Ctrl+C 优先复制，不被任何面板拦截
-            if key_event.code == KeyCode::Char('c')
-                && key_event.modifiers.contains(KeyModifiers::CONTROL)
-                && !key_event.modifiers.contains(KeyModifiers::SHIFT)
-            {
-                // 优先级：消息区选区 > 面板选区 > textarea 选区
-                if copy_selection_to_clipboard(app) {
-                    return Ok(Some(Action::Redraw));
-                }
-                if copy_panel_selection_to_clipboard(app) {
-                    return Ok(Some(Action::Redraw));
-                }
-                if app.session_mgr.sessions[app.session_mgr.active]
-                    .ui
-                    .textarea
-                    .is_selecting()
-                {
-                    app.session_mgr.sessions[app.session_mgr.active]
-                        .ui
-                        .textarea
-                        .copy();
-                    let text = app.session_mgr.sessions[app.session_mgr.active]
-                        .ui
-                        .textarea
-                        .yank_text();
-                    if !text.is_empty() {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            let _ = clipboard.set_text(&text);
-                        }
-                        let char_count = text.chars().count();
-                        app.session_mgr.sessions[app.session_mgr.active]
-                            .ui
-                            .copy_char_count = char_count;
-                        app.session_mgr.sessions[app.session_mgr.active]
-                            .ui
-                            .copy_message_until = Some(
-                            std::time::Instant::now() + std::time::Duration::from_millis(2000),
-                        );
-                        app.session_mgr.sessions[app.session_mgr.active]
-                            .ui
-                            .textarea
-                            .cancel_selection();
-                        return Ok(Some(Action::Redraw));
-                    }
-                }
-            }
-
             let input = Input::from(ev);
 
             // Setup 向导：优先拦截所有按键事件
@@ -440,7 +384,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
             }
 
             match input {
-                // Ctrl+C：有选区时复制优先（已全局拦截），无选区时中断/双击退出
+                // Ctrl+C：中断 agent / 双击退出
                 Input {
                     key: Key::Char('c'),
                     ctrl: true,
@@ -852,6 +796,80 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
             // 某些终端（如 VSCode）在 bracketed paste 中使用 \r 而非 \n 作为换行符
             let text = text.replace('\r', "\n");
 
+            // macOS 右键松开会触发 Paste 事件（而非 MouseEvent::Up(Right)）。
+            // 如果此时有活跃的选区（正在拖拽 或 已有选中文本），执行复制并跳过粘贴。
+            let active_idx = app.session_mgr.active;
+            let has_selection = app.session_mgr.sessions[active_idx]
+                .ui
+                .text_selection
+                .is_active()
+                || app.session_mgr.sessions[active_idx]
+                    .ui
+                    .panel_selection
+                    .is_active();
+            if has_selection {
+                // 如果正在拖拽（右键 Down/Drag 有鼠标事件），先结束拖拽并提取文本
+                if app.session_mgr.sessions[active_idx]
+                    .ui
+                    .panel_selection
+                    .dragging
+                {
+                    app.session_mgr.sessions[active_idx]
+                        .ui
+                        .panel_selection
+                        .end_drag();
+                    let sel = &app.session_mgr.sessions[active_idx].ui.panel_selection;
+                    if let (Some(start), Some(end)) = (sel.start, sel.end) {
+                        let extracted = crate::app::text_selection::extract_panel_text(
+                            start,
+                            end,
+                            &app.session_mgr.sessions[active_idx].ui.panel_plain_lines,
+                        );
+                        app.session_mgr.sessions[active_idx]
+                            .ui
+                            .panel_selection
+                            .set_selected_text(extracted);
+                    }
+                }
+                if app.session_mgr.sessions[active_idx]
+                    .ui
+                    .text_selection
+                    .dragging
+                {
+                    app.session_mgr.sessions[active_idx]
+                        .ui
+                        .text_selection
+                        .end_drag();
+                    let ts = &app.session_mgr.sessions[active_idx].ui.text_selection;
+                    if let (Some(start), Some(end)) = (ts.start, ts.end) {
+                        let usable_width = app.session_mgr.sessions[active_idx]
+                            .ui
+                            .messages_area
+                            .map(|a| a.width.saturating_sub(1))
+                            .unwrap_or(0);
+                        let cache = app.session_mgr.sessions[active_idx]
+                            .messages
+                            .render_cache
+                            .read();
+                        let extracted = crate::app::text_selection::extract_selected_text(
+                            start,
+                            end,
+                            &cache.wrap_map,
+                            usable_width,
+                        );
+                        drop(cache);
+                        app.session_mgr.sessions[active_idx]
+                            .ui
+                            .text_selection
+                            .set_selected_text(extracted);
+                    }
+                }
+                // 复制并清除选区
+                copy_panel_selection_to_clipboard(app);
+                copy_selection_to_clipboard(app);
+                return Ok(Some(Action::Redraw));
+            }
+
             // setup_wizard 打开时粘贴到当前字段
             if let Some(wizard) = &mut app.services.setup_wizard {
                 wizard.paste_text(&text);
@@ -1152,6 +1170,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                             .panel_selection
                             .set_selected_text(text);
                     }
+                    // 注意：不在此处自动复制，保留选区等用户右键复制
                 }
                 if app.session_mgr.sessions[app.session_mgr.active]
                     .ui
@@ -1187,6 +1206,7 @@ pub async fn next_event(app: &mut App) -> Result<Option<Action>> {
                             .text_selection
                             .set_selected_text(text);
                     }
+                    // 注意：不在此处自动复制，保留选区等用户右键复制
                 }
                 // textarea 选区在 mouse up 时不做额外处理，保持 tui_textarea 的选区状态
             }

@@ -48,8 +48,8 @@ impl MarkdownTheme for DefaultMarkdownTheme {
         Color::Rgb(153, 153, 153)
     } // MUTED #999999
     fn code(&self) -> Color {
-        Color::Rgb(215, 119, 87)
-    } // ACCENT #D77757
+        Color::Rgb(162, 169, 228)
+    } // THINKING #A2A9E4（蓝紫色）
     fn link(&self) -> Color {
         Color::Rgb(78, 186, 101)
     } // SAGE #4EBA65

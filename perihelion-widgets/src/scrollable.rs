@@ -64,6 +64,7 @@ pub struct ScrollableArea<'a> {
     content: Text<'a>,
     show_scrollbar: bool,
     scrollbar_style: Style,
+    max_thumb_length: Option<u16>,
 }
 
 impl<'a> ScrollableArea<'a> {
@@ -72,6 +73,7 @@ impl<'a> ScrollableArea<'a> {
             content,
             show_scrollbar: true,
             scrollbar_style: Style::default(),
+            max_thumb_length: None,
         }
     }
 
@@ -82,6 +84,12 @@ impl<'a> ScrollableArea<'a> {
 
     pub fn scrollbar_style(mut self, style: Style) -> Self {
         self.scrollbar_style = style;
+        self
+    }
+
+    /// 限制滚动条滑块（thumb）的最大高度（行数）
+    pub fn max_thumb_length(mut self, max: u16) -> Self {
+        self.max_thumb_length = Some(max);
         self
     }
 
@@ -113,8 +121,14 @@ impl<'a> ScrollableArea<'a> {
         f.render_widget(paragraph, text_area);
 
         if needs_scrollbar {
-            let mut scrollbar_state =
-                ScrollbarState::new(max_scroll as usize).position(state.offset as usize);
+            let viewport = if let Some(max_thumb) = self.max_thumb_length {
+                visible_height.min(max_thumb)
+            } else {
+                0
+            };
+            let mut scrollbar_state = ScrollbarState::new(max_scroll as usize)
+                .viewport_content_length(viewport as usize)
+                .position(state.offset as usize);
             let scrollbar =
                 Scrollbar::new(ScrollbarOrientation::VerticalRight).style(self.scrollbar_style);
             f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);

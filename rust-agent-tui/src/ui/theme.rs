@@ -60,6 +60,9 @@ pub const LOADING: Color = Color::Rgb(147, 165, 255);
 /// 用户消息背景色 #373737（Claude userMessageBackground）
 pub const USER_BG: Color = Color::Rgb(55, 55, 55);
 
+/// 文本选区背景色 #264f78（深色主题下网页默认选中蓝的暗色版本）
+pub const SELECTION_BG: Color = Color::Rgb(38, 79, 120);
+
 /// Bash 工具调用边框色 #FD5DB1（Claude bashBorder）
 pub const BASH_BORDER: Color = Color::Rgb(253, 93, 177);
 
