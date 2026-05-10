@@ -113,11 +113,13 @@ impl ModelPanel {
         }
     }
 
-    /// 循环切换 effort：medium → high → low → medium（任意光标位置可切换）
+    /// 循环切换 effort：low → medium → high → xhigh → max → low（任意光标位置可切换）
     pub fn cycle_effort(&mut self, reverse: bool) {
         if reverse {
             self.buf_thinking_effort = match self.buf_thinking_effort.as_str() {
-                "low" => "high".to_string(),
+                "low" => "max".to_string(),
+                "max" => "xhigh".to_string(),
+                "xhigh" => "high".to_string(),
                 "high" => "medium".to_string(),
                 _ => "low".to_string(),
             };
@@ -125,6 +127,8 @@ impl ModelPanel {
             self.buf_thinking_effort = match self.buf_thinking_effort.as_str() {
                 "low" => "medium".to_string(),
                 "medium" => "high".to_string(),
+                "high" => "xhigh".to_string(),
+                "xhigh" => "max".to_string(),
                 _ => "low".to_string(),
             };
         }
@@ -249,6 +253,8 @@ impl ModelPanel {
         let effort_display = match effort.as_str() {
             "low" => "Low",
             "high" => "High",
+            "xhigh" => "XHigh",
+            "max" => "Max",
             _ => "Medium",
         };
 
@@ -350,12 +356,20 @@ mod tests {
         panel.cycle_effort(false);
         assert_eq!(panel.buf_thinking_effort, "high");
         panel.cycle_effort(false);
+        assert_eq!(panel.buf_thinking_effort, "xhigh");
+        panel.cycle_effort(false);
+        assert_eq!(panel.buf_thinking_effort, "max");
+        panel.cycle_effort(false);
         assert_eq!(panel.buf_thinking_effort, "low");
         panel.cycle_effort(false);
         assert_eq!(panel.buf_thinking_effort, "medium");
 
         panel.cycle_effort(true);
         assert_eq!(panel.buf_thinking_effort, "low");
+        panel.cycle_effort(true);
+        assert_eq!(panel.buf_thinking_effort, "max");
+        panel.cycle_effort(true);
+        assert_eq!(panel.buf_thinking_effort, "xhigh");
         panel.cycle_effort(true);
         assert_eq!(panel.buf_thinking_effort, "high");
     }

@@ -108,6 +108,8 @@ pub(crate) fn render_model_panel(f: &mut Frame, panel: &ModelPanel, app: &App, a
         let effort_label = match panel.buf_thinking_effort.as_str() {
             "low" => "Low",
             "high" => "High",
+            "xhigh" => "XHigh",
+            "max" => "Max",
             _ => "Medium",
         };
 

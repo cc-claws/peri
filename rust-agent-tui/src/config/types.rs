@@ -74,19 +74,23 @@ impl ThinkingConfig {
         &self.effort
     }
 
-    /// effort 循环切换：low → medium → high → low
+    /// effort 循环切换：low → medium → high → xhigh → max → low
     pub fn next_effort(&self) -> &'static str {
         match self.effort.as_str() {
             "low" => "medium",
             "medium" => "high",
+            "high" => "xhigh",
+            "xhigh" => "max",
             _ => "low",
         }
     }
 
-    /// effort 反向循环切换：low → high → medium → low
+    /// effort 反向循环切换：low → max → xhigh → high → medium → low
     pub fn prev_effort(&self) -> &'static str {
         match self.effort.as_str() {
-            "low" => "high",
+            "low" => "max",
+            "max" => "xhigh",
+            "xhigh" => "high",
             "high" => "medium",
             _ => "low",
         }
@@ -186,6 +190,64 @@ mod tests {
             effort: "medium".to_string(),
         };
         assert_eq!(c.next_effort(), "high");
+        assert_eq!(c.prev_effort(), "low");
+    }
+
+    #[test]
+    fn test_thinking_effort_full_cycle() {
+        // forward: low → medium → high → xhigh → max → low
+        let c = ThinkingConfig {
+            enabled: true,
+            budget_tokens: 8000,
+            effort: "low".to_string(),
+        };
+        assert_eq!(c.next_effort(), "medium");
+        let c = ThinkingConfig {
+            effort: "medium".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.next_effort(), "high");
+        let c = ThinkingConfig {
+            effort: "high".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.next_effort(), "xhigh");
+        let c = ThinkingConfig {
+            effort: "xhigh".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.next_effort(), "max");
+        let c = ThinkingConfig {
+            effort: "max".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.next_effort(), "low");
+
+        // reverse: low → max → xhigh → high → medium → low
+        let c = ThinkingConfig {
+            effort: "low".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.prev_effort(), "max");
+        let c = ThinkingConfig {
+            effort: "max".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.prev_effort(), "xhigh");
+        let c = ThinkingConfig {
+            effort: "xhigh".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.prev_effort(), "high");
+        let c = ThinkingConfig {
+            effort: "high".to_string(),
+            ..c.clone()
+        };
+        assert_eq!(c.prev_effort(), "medium");
+        let c = ThinkingConfig {
+            effort: "medium".to_string(),
+            ..c.clone()
+        };
         assert_eq!(c.prev_effort(), "low");
     }
 

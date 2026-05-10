@@ -41,6 +41,8 @@ impl App {
         let effort_display = match effort.as_str() {
             "low" => "Low",
             "high" => "High",
+            "xhigh" => "XHigh",
+            "max" => "Max",
             _ => "Medium",
         };
         self.session_mgr.sessions[self.session_mgr.active]

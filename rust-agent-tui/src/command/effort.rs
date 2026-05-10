@@ -12,13 +12,13 @@ impl Command for EffortCommand {
     }
 
     fn description(&self) -> &str {
-        "查看或设置推理力度（low/medium/high）"
+        "查看或设置推理力度（low/medium/high/xhigh/max）"
     }
 
     fn execute(&self, app: &mut App, args: &str) {
         let arg = args.trim().to_lowercase();
         match arg.as_str() {
-            "low" | "medium" | "high" => {
+            "low" | "medium" | "high" | "xhigh" | "max" => {
                 let cfg = app
                     .services
                     .peri_config
@@ -64,7 +64,7 @@ impl Command for EffortCommand {
                     .map(|t| t.effort.as_str())
                     .unwrap_or("high");
                 let vm = MessageViewModel::system(format!(
-                    "当前推理力度: {}\n用法: /effort low|medium|high",
+                    "当前推理力度: {}\n用法: /effort low|medium|high|xhigh|max",
                     current
                 ));
                 app.session_mgr

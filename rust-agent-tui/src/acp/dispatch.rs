@@ -162,6 +162,8 @@ fn build_config_options(
                 SessionConfigSelectOption::new(SessionConfigValueId::new("low"), "Low"),
                 SessionConfigSelectOption::new(SessionConfigValueId::new("medium"), "Medium"),
                 SessionConfigSelectOption::new(SessionConfigValueId::new("high"), "High"),
+                SessionConfigSelectOption::new(SessionConfigValueId::new("xhigh"), "XHigh"),
+                SessionConfigSelectOption::new(SessionConfigValueId::new("max"), "Max"),
             ],
         )),
     )
