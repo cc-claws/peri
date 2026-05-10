@@ -59,6 +59,18 @@ acpx-g (DAG workflow engine，独立)
 
 **Thinking/推理模式**：`ThinkingConfig`（`rust-agent-tui/src/config/types.rs`）控制推理参数，Anthropic 用 `thinking + output_config.effort`，OpenAI 用 `reasoning_effort`。`budget_tokens` 最小 1024，`max_tokens` 必须 > `budget_tokens`。
 
+**OpenAI 兼容 Reasoning 回传规则**（`rust-create-agent/src/llm/openai.rs`）：
+
+| 通道 | 格式 | 适用模型 |
+|------|------|---------|
+| `reasoning_content` 顶层字段 | `{"role":"assistant","content":"...","reasoning_content":"思考内容"}` | DeepSeek R1 等所有返回 `reasoning_content` 的模型，**必须回传**否则 400 |
+| content 数组 `thinking` 类型 | `{"type":"thinking","thinking":"思考内容"}` | deepseek-v4-pro（通过 `supports_thinking_content` 标志控制） |
+| 过滤不回传 | — | GPT-4o 等不支持 thinking 的模型 |
+
+`ChatOpenAI` 的 `supports_thinking_content` 字段控制 content 数组中是否包含 `thinking` 块，`detect_thinking_content_support()` 根据模型名自动检测（默认 false，仅 deepseek-v4 开启）。`extract_reasoning_text()` 从 `Reasoning` blocks 提取文本写入 `reasoning_content` 顶层字段，此行为对所有模型生效（不支持的字段会被忽略）。
+
+**[TRAP]** DeepSeek 错误 `unknown variant 'thinking', expected 'text'`：把 `Reasoning` block 序列化为 content 数组中的 `{"type":"thinking"}` 发给了不支持的 provider。**[TRAP]** DeepSeek 错误 `reasoning_content must be passed back`：从 content 中过滤了 `Reasoning` 但没作为顶层字段回传。两个陷阱互相关联，不能只修一个。
+
 **事件系统**：核心层 `AgentEvent` 11 种变体（AiReasoning/TextChunk/ToolStart/ToolEnd/StepDone/StateSnapshot/MessageAdded/LlmCallStart/LlmCallEnd/LlmRetrying/BackgroundTaskCompleted）。TUI 层扩展 Done/Error/ApprovalNeeded/AskUserBatch 等。
 
 **消息管线**：`MessagePipeline` 统一管理消息状态，`PipelineAction` 枚举描述 UI 变更，`reconcile_tail()` 在 Done/Interrupted 时触发尾部重建。
