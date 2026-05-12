@@ -396,6 +396,10 @@ pub fn render_view_model(
                 };
                 let bg_style = Style::default().bg(theme::SUB_AGENT_BG);
                 for inner_vm in iter_messages.iter() {
+                    // SubAgent 内部跳过 AssistantBubble，只显示工具调用
+                    if matches!(inner_vm, MessageViewModel::AssistantBubble { .. }) {
+                        continue;
+                    }
                     let inner_lines = render_view_model(inner_vm, None, _width);
                     if inner_lines.is_empty() {
                         continue;
