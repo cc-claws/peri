@@ -322,7 +322,7 @@ pub fn get_node_env(node: &NodeDef) -> &HashMap<String, String> {
     match node {
         NodeDef::Shell(n) => &n.env,
         NodeDef::Agent(n) => &n.env,
-        NodeDef::Reference(_) => &*EMPTY_MAP,
+        NodeDef::Reference(_) => &EMPTY_MAP,
     }
 }
 

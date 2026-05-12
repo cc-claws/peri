@@ -1,6 +1,6 @@
 # Auto Compact 后 Agent 未自动 Resubmit 继续执行
 
-**状态**：Fixed
+**状态**：Fixed + Verify
 **优先级**：高
 **创建日期**：2026-05-11
 **修复 commit**：`505c034` fix(auto-compact): preserve user input across compact for reliable resubmit

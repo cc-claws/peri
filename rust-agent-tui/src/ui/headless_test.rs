@@ -3333,7 +3333,7 @@ async fn test_diagnostic_bg_subagent_group_disappears() {
             .messages
             .view_messages
             .iter()
-            .map(|vm| std::mem::discriminant(vm))
+            .map(std::mem::discriminant)
             .collect::<Vec<_>>()
     );
 

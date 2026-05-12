@@ -576,6 +576,7 @@ mod tests {
             kind: lsp_types::SymbolKind::FUNCTION,
             location: make_location("/src/main.rs", 0, 0),
             container_name: None,
+            #[allow(deprecated)]
             deprecated: None,
             tags: None,
         }];

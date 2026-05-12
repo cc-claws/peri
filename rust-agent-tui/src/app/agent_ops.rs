@@ -1161,7 +1161,7 @@ mod tests {
         {
             assert_eq!(prefix_len, 2);
             // tail 应包含 q2（从最后一条 Human 开始 reconcile）
-            assert!(tail_vms.len() >= 1, "tail_vms 应包含 q2");
+            assert!(!tail_vms.is_empty(), "tail_vms 应包含 q2");
         } else {
             panic!("Expected RebuildAll");
         }
