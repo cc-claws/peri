@@ -235,7 +235,7 @@ mod tests {
         )
     }
 
-    use crate::messages::ToolCallRequest;
+    use crate::messages::{DocumentSource, ToolCallRequest};
 
     // Whitelist tests
 
@@ -506,5 +506,148 @@ mod tests {
 
     fn ai_plain(text: &str) -> BaseMessage {
         BaseMessage::ai(text)
+    }
+
+    // Document compaction tests
+
+    fn tool_result_with_document(tc_id: &str, source: DocumentSource) -> BaseMessage {
+        BaseMessage::tool_result(
+            tc_id,
+            MessageContent::blocks(vec![
+                ContentBlock::text("text content"),
+                ContentBlock::Document {
+                    source,
+                    title: Some("doc.pdf".into()),
+                },
+            ]),
+        )
+    }
+
+    #[test]
+    fn test_document_replaced_with_placeholder() {
+        let mut msgs = vec![
+            ai_with_tool("tc1", "Read"),
+            tool_result_with_document(
+                "tc1",
+                DocumentSource::Text {
+                    text: "short doc".into(),
+                },
+            ),
+        ];
+        let mut config = test_config();
+        config.micro_compact_stale_steps = 0;
+        let cleared = micro_compact_enhanced(&config, &mut msgs);
+        assert_eq!(cleared, 1);
+        let content = msgs[1].content();
+        assert!(
+            content.contains("[document]"),
+            "Document 应被替换为占位符，实际: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_large_document_compacted_with_token_info() {
+        let large_b64 = "A".repeat(100_000);
+        let mut msgs = vec![
+            ai_with_tool("tc1", "Read"),
+            tool_result_with_document(
+                "tc1",
+                DocumentSource::Base64 {
+                    media_type: "application/pdf".into(),
+                    data: large_b64,
+                },
+            ),
+        ];
+        let mut config = test_config();
+        config.micro_compact_stale_steps = 0;
+        let cleared = micro_compact_enhanced(&config, &mut msgs);
+        assert_eq!(cleared, 1);
+        let content = msgs[1].content();
+        assert!(
+            content.contains("compacted: document"),
+            "大 Document 应带 token 信息压缩，实际: {}",
+            content
+        );
+        // 100_000 base64 chars * 3/4 (decode) / 4 (token est) = 18750 tokens
+        assert!(
+            content.contains("18750 tokens"),
+            "应包含估算 token 数，实际: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_document_compaction_preserves_other_content() {
+        let mut msgs = vec![
+            ai_with_tool("tc1", "Read"),
+            BaseMessage::tool_result(
+                "tc1",
+                MessageContent::blocks(vec![
+                    ContentBlock::text("read output"),
+                    ContentBlock::Document {
+                        source: DocumentSource::Url {
+                            url: "https://example.com/doc.pdf".into(),
+                        },
+                        title: Some("remote.pdf".into()),
+                    },
+                ]),
+            ),
+        ];
+        let mut config = test_config();
+        config.micro_compact_stale_steps = 0;
+        let cleared = micro_compact_enhanced(&config, &mut msgs);
+        assert_eq!(cleared, 1);
+        let content = msgs[1].content();
+        // Document 被替换为占位符，Text 内容保留
+        assert!(
+            content.contains("[document]"),
+            "Document 应被替换为占位符，实际: {}",
+            content
+        );
+        assert!(
+            content.contains("read output"),
+            "Text 内容应被保留，实际: {}",
+            content
+        );
+    }
+
+    // tool_call_id preservation test
+
+    #[test]
+    fn test_compact_preserves_tool_call_ids_on_ai_message() {
+        let tc1_id = "tc_abc_001";
+        let tc1_name = "Bash";
+        let tc2_id = "tc_xyz_002";
+        let tc2_name = "Read";
+        let long_text = "x".repeat(600);
+        let mut msgs = vec![
+            BaseMessage::ai_with_tool_calls(
+                MessageContent::text("using tools"),
+                vec![
+                    ToolCallRequest::new(tc1_id, tc1_name, json!({"cmd": "ls"})),
+                    ToolCallRequest::new(tc2_id, tc2_name, json!({"path": "a.rs"})),
+                ],
+            ),
+            tool_result(tc1_id, &long_text),
+            tool_result(tc2_id, &long_text),
+        ];
+        let mut config = test_config();
+        config.micro_compact_stale_steps = 0;
+        let cleared = micro_compact_enhanced(&config, &mut msgs);
+        assert_eq!(cleared, 2, "两个工具结果都应被压缩");
+        let ai_msg = &msgs[0];
+        let tool_calls = ai_msg.tool_calls();
+        assert_eq!(tool_calls.len(), 2, "AI 消息应保留 2 个 tool_calls");
+        assert_eq!(tool_calls[0].id, tc1_id, "tool_calls[0].id 应保持不变");
+        assert_eq!(
+            tool_calls[0].name, tc1_name,
+            "tool_calls[0].name 应保持不变"
+        );
+        assert_eq!(tool_calls[1].id, tc2_id, "tool_calls[1].id 应保持不变");
+        assert_eq!(
+            tool_calls[1].name, tc2_name,
+            "tool_calls[1].name 应保持不变"
+        );
     }
 }

@@ -395,6 +395,54 @@ mod tests {
         assert_eq!(e, 1);
     }
 
+    #[test]
+    fn test_group_system_message_as_plain_round() {
+        let msgs = vec![
+            BaseMessage::system("you are an assistant"),
+            BaseMessage::human("q1"),
+            ai_plain("a1"),
+        ];
+        let rounds = group_messages_by_round(&msgs);
+        assert_eq!(rounds.len(), 3);
+        assert_eq!(rounds[0].start, 0);
+        assert_eq!(rounds[0].end, 1);
+        assert!(
+            rounds[0].tool_call_ids.is_empty(),
+            "System 消息的 tool_call_ids 应为空"
+        );
+    }
+
+    #[test]
+    fn test_group_consecutive_ai_with_tool_calls() {
+        let msgs = vec![
+            ai_with_tools(&["tc1"]),
+            tool_msg("tc1", "out1"),
+            ai_with_tools(&["tc2"]),
+        ];
+        let rounds = group_messages_by_round(&msgs);
+        assert_eq!(rounds.len(), 2, "两组 AI+Tool 应形成独立 rounds");
+        assert_eq!(rounds[0].start, 0);
+        assert_eq!(rounds[0].end, 2);
+        assert_eq!(rounds[0].tool_call_ids, vec!["tc1".to_string()]);
+        assert_eq!(rounds[1].start, 2);
+        assert_eq!(rounds[1].end, 3);
+        assert_eq!(rounds[1].tool_call_ids, vec!["tc2".to_string()]);
+    }
+
+    #[test]
+    fn test_adjust_empty_range_on_non_empty_slice() {
+        let msgs = vec![
+            BaseMessage::human("q"),
+            ai_with_tools(&["tc1"]),
+            tool_msg("tc1", "out"),
+            BaseMessage::human("q2"),
+            ai_plain("a"),
+        ];
+        let (s, e) = adjust_index_to_preserve_invariants(&msgs, 3, 3);
+        assert_eq!(s, 3, "start == end 时应原样返回 start");
+        assert_eq!(e, 3, "start == end 时应原样返回 end");
+    }
+
     /// 验证 while 循环正确处理边界扩展后的新 Tool 消息
     #[test]
     fn test_adjust_transitive_expansion() {
