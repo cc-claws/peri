@@ -526,6 +526,20 @@ submit_message(text)
 
 ---
 
+## Issue 经验附录
+
+### issue_2026-05-12-textarea-mouse-click-cursor-misposition-cjk
+**摘要:** 输入框鼠标点击光标定位不准
+**状态:** Fixed
+**归档日期:** 2026-05-13
+**关键词:** CJK 宽度, unicode-width, 鼠标定位, display_col_to_char_idx
+**问题本质:** 三个偏移叠加：(1) CJK 字符占 2 列宽但 Jump 期望字符索引；(2) Block padding 偏移 2 列未计算 inner area；(3) 水平滚动偏移未考虑
+**通用模式:** 终端 UI 中鼠标坐标是显示列（display column），而光标位置是字符索引（char index）。包含 CJK 字符时两者非线性关系，需要逐字符累加 unicode_width 转换。Block 的 padding/border 和水平滚动也需要纳入偏移计算
+**涉及文件:** rust-agent-tui/src/event.rs, rust-agent-tui/src/app/mod.rs, rust-agent-tui/src/ui/main_ui.rs
+**CLAUDE.md 链接:** false
+
+---
+
 ## 相关 Feature
 
 - → [agent.md#20260322_F001_agent-storage-refactor](./agent.md#20260322_F001_agent-storage-refactor) — SQLite 持久化，TUI 消息渲染依赖此存储

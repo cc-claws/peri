@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-cache-percentage-disappears-after-done.md
+
 # 状态栏缓存百分比在对话停止后消失
 
 **状态**：Fixed + Verify

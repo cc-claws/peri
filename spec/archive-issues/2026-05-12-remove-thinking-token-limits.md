@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-remove-thinking-token-limits.md
+
 # 删除 Anthropic Extended Thinking 的 token 限制
 
 **状态**：Done

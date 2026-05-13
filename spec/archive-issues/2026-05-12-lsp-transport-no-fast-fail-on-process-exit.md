@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-lsp-transport-no-fast-fail-on-process-exit.md
+
 # LSP transport 层错误处理缺陷（进程退出未更新状态 + 崩溃后无自动重连）
 
 **状态**：Fixed + Verify

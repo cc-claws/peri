@@ -71,6 +71,63 @@ reconcile_tail(round_start_vm_idx)
 **归档:** [链接](../../archive/feature_20260430_F002_reconcile-on-done-interrupted/)
 **归档日期:** 2026-04-30
 
+## Issue 经验附录
+
+### issue_2026-05-12-deferred-tool-list-nondeterministic-order
+**摘要:** 多处 HashMap 非确定性顺序导致 Anthropic Prompt Cache 前缀不稳定
+**状态:** Fixed + Verify
+**归档日期:** 2026-05-13
+**关键词:** HashMap 顺序, Prompt Cache, 缓存前缀, ToolSearchIndex
+**问题本质:** HashMap 迭代顺序不确定（Rust 默认 RandomState），跨进程重启时 API 请求前缀变化，导致 Prompt Cache 失效。涉及 ToolSearchIndex 的 deferred tools 列表注入和 executor 的 tool_refs 两个独立位置
+**通用模式:** 所有需要跨进程复用的序列化内容（system prompt、tools 数组）必须保证顺序稳定。任何参与缓存前缀的数据结构，其迭代顺序必须是确定性的
+**架构影响:** ToolSearchIndex 从 submit 级局部变量提升到 session 级共享 Arc，减少重复构建的同时保证缓存一致性
+**技术决策:** 工具列表按名称排序；ToolSearchIndex 会话级缓存；每轮注入缓存提示词而非重新构建
+**涉及文件:** rust-agent-middlewares/src/tool_search/tool_index.rs, rust-create-agent/src/agent/executor/mod.rs, rust-agent-tui/src/app/agent_comm.rs, rust-agent-tui/src/app/agent.rs, rust-agent-tui/src/app/agent_submit.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-12-skill-preload-invalidates-prompt-cache
+**摘要:** Skill Preload 注入消息到历史最前面导致首轮 Prompt Cache 失效
+**状态:** Fixed + Verify
+**归档日期:** 2026-05-13
+**关键词:** Prompt Cache, prepend_message, add_message, cache_control
+**问题本质:** SkillPreloadMiddleware 用 prepend_message 将合成消息插入 index 0，改变了第一条 user 消息的位置，Anthropic 的 cache_control 标记落在不稳定的合成消息上，导致首轮 cache miss
+**通用模式:** 向消息数组头部插入内容会改变缓存边界，应优先使用尾部追加（add_message）。缓存控制标记（cache_control）的位置决定了缓存前缀的稳定性
+**技术决策:** prepend_message 改为 add_message，使 preload 工具调用追加在用户消息之后
+**涉及文件:** rust-agent-middlewares/src/subagent/skill_preload.rs, rust-create-agent/src/agent/compact/re_inject.rs, rust-create-agent/src/llm/anthropic.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-12-systemnote-position-drift-on-rebuild
+**摘要:** SystemNote 在 RebuildAll 后堆积到消息列表末尾
+**状态:** Fixed
+**归档日期:** 2026-05-13
+**关键词:** SystemNote, RebuildAll, ephemeral_notes, 锚点机制
+**问题本质:** AddMessage 直接 push 到 view_messages 末尾，RebuildAll 的 saved_notes 机制保存后追加到末尾，导致 SystemNote 永远漂移到消息流最后
+**通用模式:** 纯 UI 层的临时 VM（不在 BaseMessage 中）需要独立的锚点机制来维持位置。RebuildAll 的 drain+重建会破坏所有尾部追加内容的位置
+**架构影响:** 引入 ephemeral_notes 字段记录 (锚点, VM) 对，RebuildAll 时按锚点位置重新插入。这是 message-pipeline 处理纯 UI VM 生命周期的通用模式
+**技术决策:** VM 索引锚点方案——记录创建时 view_messages.len() 作为锚点，RebuildAll 时根据锚点与 prefix_len 的关系决定保留/丢弃/重插入
+**涉及文件:** rust-agent-tui/src/app/agent_render.rs, rust-agent-tui/src/app/message_pipeline.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-12-cache-warning-discarded-by-rebuild
+**摘要:** CacheWarning 消息被 RebuildAll 立即丢弃，用户无法看到
+**状态:** Fixed + Verify
+**归档日期:** 2026-05-13
+**关键词:** CacheWarning, RebuildAll, saved_notes, ephemeral VM
+**问题本质:** RebuildAll 的 saved_notes 过滤器只保留 SystemNote 变体，不保留 CacheWarning，导致缓存警告一闪而过
+**通用模式:** 新增 ephemeral VM 变体时，必须同步更新 RebuildAll 的 saved_notes 过滤逻辑，否则会被 drain 丢弃
+**涉及文件:** rust-agent-tui/src/app/agent_ops.rs, rust-agent-tui/src/app/agent_render.rs, rust-agent-tui/src/ui/message_view.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-12-compact-ephemeral-notes-not-cleared
+**摘要:** Compact 完成后残留 "正在压缩上下文…" 系统通知
+**状态:** Closed
+**归档日期:** 2026-05-13
+**关键词:** ephemeral_notes, compact, RebuildAll, prefix_len: 0
+**问题本质:** Compact 完成后的 RebuildAll { prefix_len: 0 } 保留所有锚点 >= 0 的 ephemeral_notes，包括 compact 前的旧通知
+**通用模式:** 全量重建（prefix_len: 0）时，应先清理过期的 ephemeral_notes，否则所有历史临时通知都会被保留
+**涉及文件:** rust-agent-tui/src/app/agent_compact.rs, rust-agent-tui/src/app/thread_ops.rs, rust-agent-tui/src/app/agent_ops.rs, rust-agent-tui/src/app/agent_render.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-subagent-skip-assistant-bubble.md
+
 # SubAgent 内部跳过 AssistantBubble 渲染
 
 **状态**：Fixed + Verify

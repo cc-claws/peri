@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-11-background-agent-missing-tools.md
+
 # Background Agent 工具继承缺失——子 agent 仅能使用 TodoWrite
 
 **状态**：Fixed + Verify

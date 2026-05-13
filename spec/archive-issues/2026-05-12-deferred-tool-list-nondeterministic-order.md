@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-deferred-tool-list-nondeterministic-order.md
+
 # 多处 HashMap 非确定性顺序导致 Anthropic Prompt Cache 前缀不稳定
 
 **状态**：Fixed + Verify

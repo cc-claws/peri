@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-askuserquestion-display-format.md
+
 # AskUserQuestion 问答显示格式优化
 
 **状态**：Closed

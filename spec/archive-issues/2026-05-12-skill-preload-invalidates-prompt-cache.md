@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-skill-preload-invalidates-prompt-cache.md
+
 # Skill Preload 注入消息到历史最前面导致首轮 Prompt Cache 失效
 
 **状态**：Fixed + Verify

@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-11-context-usage-miscalculation-openai-compatible.md
+
 # OpenAI 兼容第三方 Provider 上下文用量计算不准确
 
 **状态**：Fixed + Verify

@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-cache-warning-discarded-by-rebuild.md
+
 # CacheWarning 消息被 RebuildAll 立即丢弃，用户无法看到
 
 **状态**：Fixed + Verify

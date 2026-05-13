@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-background-agent-display-and-continuation-bugs.md
+
 # Background Agent 三个 Bug：显示消失、subagent_type 限制、continuation 不触发
 
 **状态**：Fixed + Verify

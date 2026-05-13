@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-unfocused-textarea-hide-cursor.md
+
 # 输入框光标应随聚焦状态隐藏
 
 **状态**：Fixed

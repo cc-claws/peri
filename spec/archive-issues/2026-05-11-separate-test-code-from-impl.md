@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-11-separate-test-code-from-impl.md
+
 # 分离测试代码与业务代码，缩减文件体积
 
 **状态**：Fixed + Verify

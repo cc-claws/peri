@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-glm-reasoning-field-not-parsed.md
+
 # GLM 模型 reasoning 字段未被解析，thinking 内容跨轮次丢失
 
 **状态**：Fixed

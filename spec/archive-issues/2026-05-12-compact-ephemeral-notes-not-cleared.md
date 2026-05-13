@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-compact-ephemeral-notes-not-cleared.md
+
 # Compact 完成后残留 "正在压缩上下文…" 系统通知
 
 **状态**：Closed

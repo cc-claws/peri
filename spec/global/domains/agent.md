@@ -312,6 +312,53 @@ launch_agent 工具调用
 
 ---
 
+## Issue 经验附录
+
+### issue_2026-05-11-streaming-text-invisible-with-tools
+**摘要:** 流式过程中 AI 文本不可见（工具调用场景）
+**状态:** Fixed（待用户验证）
+**归档日期:** 2026-05-13
+**关键词:** AiReasoning, TextChunk, 事件类型语义, 流式渲染
+**问题本质:** 工具前文本通过 AiReasoning 事件发射而非 TextChunk，TUI pipeline 将 AiReasoning 映射为 "Thought for N chars" 推理提示，不显示实际文本
+**通用模式:** 核心框架的事件类型决定了 TUI pipeline 的处理路径。新增事件或修改事件语义时，必须同步检查 TUI 侧的事件映射层（agent.rs 的事件映射表）
+**技术决策:** 工具前文本改用 TextChunk 发射，与最终回答走同一路径
+**涉及文件:** rust-create-agent/src/agent/executor/tool_dispatch.rs, rust-create-agent/src/agent/executor/final_answer.rs, rust-agent-tui/src/app/agent.rs, rust-agent-tui/src/app/message_pipeline.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-12-background-agent-display-and-continuation-bugs
+**摘要:** Background Agent 三个 Bug：显示消失、subagent_type 限制、continuation 不触发
+**状态:** Fixed + Verify
+**归档日期:** 2026-05-13
+**关键词:** frozen_subagent_vms, continuation 竞态, fork+background, pending_bg_continuation
+**问题本质:** 三个独立根因：(1) fork 检测优先于 background 导致走错路径且 background_task_count 泄漏；(2) frozen_subagent_vms 跨轮次膨胀导致错位替换；(3) pending_bg_continuation.take() 在 loading=true 时丢失
+**通用模式:** 多语义叠加（fork+background）时需要明确的优先级和独立处理路径。跨轮次累积的数据结构（frozen_vms）必须有清理/去重机制。异步 take() + 条件检查应先检查条件再 take()，避免消费后丢弃
+**架构影响:** frozen_subagent_vms 的 drain_subagent_stack() 方法规范了异常残留清理；pending_bg_continuation 的修复模式（先检查条件再 take）可作为异步状态消费的通用范式
+**涉及文件:** rust-agent-middlewares/src/subagent/tool.rs, rust-agent-tui/src/app/agent_ops.rs, rust-agent-tui/src/app/message_pipeline.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-11-background-agent-missing-tools
+**摘要:** Background Agent 工具继承缺失——子 agent 仅能使用 TodoWrite
+**状态:** Fixed + Verify
+**归档日期:** 2026-05-13
+**关键词:** SubAgent, 工具继承, register_tool, Arc 共享
+**问题本质:** Background agent 的工具完全依赖 parent_tools 通过 register_tool 传递，tokio::spawn 闭包的 Arc 引用在 move 后可能失效
+**通用模式:** Background agent 的 middleware 配置与 Normal 路径一致但工具来源不同（register_tool vs middleware 内部构建）。跨 async 边界的工具传递需要确保 Arc 引用的生命周期
+**涉及文件:** rust-agent-tui/src/app/agent.rs, rust-agent-middlewares/src/subagent/tool.rs, rust-create-agent/src/agent/executor/mod.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-12-glm-reasoning-field-not-parsed
+**摘要:** GLM 模型 reasoning 字段未被解析，thinking 内容跨轮次丢失
+**状态:** Fixed
+**归档日期:** 2026-05-13
+**关键词:** reasoning, reasoning_content, GLM, OpenAI 兼容
+**问题本质:** GLM 系列模型使用 `reasoning` 顶层字段而非 `reasoning_content`，代码只检查了后者。附带发现 invariant check 对并行 tool_calls 的合法消息序列产生误报
+**通用模式:** OpenAI 兼容 API 的字段名存在 provider 差异。解析时应同时检查多个可能的字段名（or_else 链式），序列化时应同时回传多个字段以保持兼容。invariant check 应基于消息块而非逐条检查
+**技术决策:** 解析侧 reasoning_content.or(reasoning) 双字段尝试；序列化侧同时设置两个字段；invariant check 改为连续块检查
+**涉及文件:** rust-create-agent/src/llm/openai.rs, rust-create-agent/src/messages/adapters/openai.rs
+**CLAUDE.md 链接:** true
+
+---
+
 ## 相关 Feature
 
 - → [relay-server.md#feature_20260326_F009_relay-message-id-propagation](./relay-server.md) — message_id 透传到 Web 前端

@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-textarea-mouse-click-cursor-misposition-cjk.md
+
 # 输入框鼠标点击光标定位不准
 
 **状态**：Fixed

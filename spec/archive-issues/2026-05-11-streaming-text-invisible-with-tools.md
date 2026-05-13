@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-11-streaming-text-invisible-with-tools.md
+
 # 流式过程中 AI 文本不可见（工具调用场景）
 
 **状态**：Fixed（待用户验证）

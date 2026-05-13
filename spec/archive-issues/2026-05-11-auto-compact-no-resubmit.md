@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-11-auto-compact-no-resubmit.md
+
 # Auto Compact 后 Agent 未自动 Resubmit 继续执行
 
 **状态**：Fixed + Verify

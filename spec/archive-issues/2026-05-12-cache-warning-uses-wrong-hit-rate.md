@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-cache-warning-uses-wrong-hit-rate.md
+
 # 缓存率警告使用错误的命中率计算方式
 
 **状态**：Fixed

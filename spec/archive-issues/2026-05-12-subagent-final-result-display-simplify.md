@@ -1,3 +1,5 @@
+> 归档于 2026-05-13，原路径 spec/issues/2026-05-12-subagent-final-result-display-simplify.md
+
 # 工具显示格式简化
 
 **状态**：Fixed + Verify

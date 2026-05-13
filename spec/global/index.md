@@ -130,6 +130,7 @@
 - [tui-widgets](./domains/tui-widgets.md) — TUI 组件（Spinner/ToolCall/MessageBlock widget + widget 库抽取）— 2 features
 - [compact](./domains/compact.md) — 上下文压缩增强（Micro/Full Compact 策略）— 1 feature
 - [code-architecture](./domains/code-architecture.md) — 代码架构（Relay 移除等结构性变更）— 1 feature
+- [lsp](./domains/lsp.md) — LSP 集成（客户端库、transport 错误处理、自动重连）— 0 features
 
 ---
 *最后更新: 2026-05-13 — 由 SDD Archive 归档时更新*
