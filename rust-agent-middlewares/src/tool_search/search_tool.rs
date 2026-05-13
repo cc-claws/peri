@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use rust_create_agent::tools::BaseTool;
 use serde_json::{json, Value};
 
+use super::core_tools::SEARCH_EXTRA_TOOLS_NAME;
 use super::tool_index::ToolSearchIndex;
 
 /// 搜索延迟加载工具的元工具
@@ -25,7 +26,7 @@ impl SearchExtraTools {
 #[async_trait]
 impl BaseTool for SearchExtraTools {
     fn name(&self) -> &str {
-        "SearchExtraTools"
+        SEARCH_EXTRA_TOOLS_NAME
     }
 
     fn description(&self) -> &str {

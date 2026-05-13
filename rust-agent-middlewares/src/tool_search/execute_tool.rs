@@ -8,6 +8,8 @@ use parking_lot::RwLock;
 use rust_create_agent::tools::BaseTool;
 use serde_json::{json, Value};
 
+use super::core_tools::{EXECUTE_EXTRA_TOOL_NAME, EXTRA_TOOL_NAME_FIELD, EXTRA_TOOL_PARAMS_FIELD};
+
 /// 代理执行延迟加载工具的元工具
 ///
 /// LLM 通过 SearchExtraTools 发现工具后，使用此工具代理调用。
@@ -26,7 +28,7 @@ impl ExecuteExtraTool {
 #[async_trait]
 impl BaseTool for ExecuteExtraTool {
     fn name(&self) -> &str {
-        "ExecuteExtraTool"
+        EXECUTE_EXTRA_TOOL_NAME
     }
 
     fn description(&self) -> &str {
@@ -55,20 +57,26 @@ impl BaseTool for ExecuteExtraTool {
         input: Value,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let tool_name = input
-            .get("tool_name")
+            .get(EXTRA_TOOL_NAME_FIELD)
             .and_then(|v| v.as_str())
-            .ok_or("ExecuteExtraTool: missing required 'tool_name' parameter")?;
+            .ok_or(format!(
+                "{}: missing required '{}' parameter",
+                EXECUTE_EXTRA_TOOL_NAME, EXTRA_TOOL_NAME_FIELD
+            ))?;
 
         let params = input
-            .get("params")
-            .ok_or("ExecuteExtraTool: missing required 'params' parameter")?
+            .get(EXTRA_TOOL_PARAMS_FIELD)
+            .ok_or(format!(
+                "{}: missing required '{}' parameter",
+                EXECUTE_EXTRA_TOOL_NAME, EXTRA_TOOL_PARAMS_FIELD
+            ))?
             .clone();
 
         let tool = {
             let tools = self.shared_tools.read();
             tools.get(tool_name).cloned().ok_or(format!(
-                "ExecuteExtraTool: tool '{}' not found or not registered as a deferred tool",
-                tool_name
+                "{}: tool '{}' not found or not registered as a deferred tool",
+                EXECUTE_EXTRA_TOOL_NAME, tool_name
             ))?
         };
 

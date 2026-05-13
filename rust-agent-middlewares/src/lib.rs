@@ -64,7 +64,11 @@ pub use subagent::{
     scan_agents, scan_agents_with_extra_dirs, BackgroundTask, BackgroundTaskRegistry,
     BackgroundTaskStatus, SkillPreloadMiddleware, SubAgentMiddleware, SubAgentTool,
 };
-pub use tool_search::{is_deferred_tool, ToolSearchMiddleware, CORE_TOOLS, META_TOOLS};
+pub use tool_search::{
+    is_deferred_tool, resolve_effective_tool_name, ToolSearchMiddleware, CORE_TOOLS,
+    EXECUTE_EXTRA_TOOL_NAME, EXTRA_TOOL_NAME_FIELD, EXTRA_TOOL_PARAMS_FIELD, META_TOOLS,
+    SEARCH_EXTRA_TOOLS_NAME,
+};
 pub use tools::{ArcToolWrapper, AskUserTool, BoxToolWrapper};
 
 /// Prelude - 常用类型一次性导入

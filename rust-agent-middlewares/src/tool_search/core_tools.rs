@@ -3,6 +3,17 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+// ─── 共享常量 ────────────────────────────────────────────────────────────────
+
+/// ExecuteExtraTool 元工具名称
+pub const EXECUTE_EXTRA_TOOL_NAME: &str = "ExecuteExtraTool";
+/// SearchExtraTools 元工具名称
+pub const SEARCH_EXTRA_TOOLS_NAME: &str = "SearchExtraTools";
+/// ExecuteExtraTool 输入字段名：目标工具名
+pub const EXTRA_TOOL_NAME_FIELD: &str = "tool_name";
+/// ExecuteExtraTool 输入字段名：目标工具参数
+pub const EXTRA_TOOL_PARAMS_FIELD: &str = "params";
+
 /// 核心工具白名单（始终发送给 LLM，共 12 个）
 ///
 /// - 文件操作 (6): Read, Write, Edit, Glob, Grep, folder_operations
@@ -36,10 +47,26 @@ pub static CORE_TOOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 
 /// 元工具集合（Tool Search 延迟加载机制的工具，始终发送给 LLM）
 pub static META_TOOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    ["SearchExtraTools", "ExecuteExtraTool"]
+    [SEARCH_EXTRA_TOOLS_NAME, EXECUTE_EXTRA_TOOL_NAME]
         .into_iter()
         .collect()
 });
+
+/// 解析有效的工具名称
+///
+/// 当 tool_name 为 [`EXECUTE_EXTRA_TOOL_NAME`] 时，从 `input[EXTRA_TOOL_NAME_FIELD]` 提取目标工具名，
+/// 用于 HITL 权限判断。否则直接返回原始工具名。
+pub fn resolve_effective_tool_name(tool_name: &str, input: &serde_json::Value) -> String {
+    if tool_name == EXECUTE_EXTRA_TOOL_NAME {
+        input
+            .get(EXTRA_TOOL_NAME_FIELD)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| tool_name.to_string())
+    } else {
+        tool_name.to_string()
+    }
+}
 
 /// 判定工具是否为延迟加载工具（Deferred Tool）
 ///

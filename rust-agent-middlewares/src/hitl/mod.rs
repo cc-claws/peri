@@ -62,19 +62,10 @@ pub fn is_edit_tool(tool_name: &str) -> bool {
 
 /// 获取有效的工具名称
 ///
-/// 当 tool_name 为 "ExecuteExtraTool" 时，从 input["tool_name"] 提取目标工具名，
-/// 用于 HITL 权限判断。否则直接返回原始工具名。
-pub fn effective_tool_name(tool_name: &str, input: &serde_json::Value) -> String {
-    if tool_name == "ExecuteExtraTool" {
-        input
-            .get("tool_name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| tool_name.to_string())
-    } else {
-        tool_name.to_string()
-    }
-}
+/// 当 tool_name 为 [`crate::tool_search::core_tools::EXECUTE_EXTRA_TOOL_NAME`] 时，
+/// 从 `input[EXTRA_TOOL_NAME_FIELD]` 提取目标工具名，用于 HITL 权限判断。
+/// 否则直接返回原始工具名。
+pub use crate::tool_search::core_tools::resolve_effective_tool_name as effective_tool_name;
 
 // ─── HumanInTheLoopMiddleware ──────────────────────────────────────────────────
 
