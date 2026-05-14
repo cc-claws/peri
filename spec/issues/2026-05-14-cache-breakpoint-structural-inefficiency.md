@@ -1,6 +1,6 @@
 # Prompt Cache 断点结构性效率缺陷：82% system 未缓存 + message 断点浪费
 
-**状态**：Reopen
+**状态**：Fixed
 **优先级**：中
 **创建日期**：2026-05-14
 **Reopen 日期**：2026-05-14
@@ -76,18 +76,21 @@ block[1] 内容包含 Deferred Tools 说明、SubAgent 文档、Skills 列表、
 移除 `tools[last]` cache_control（已被 msg[first] 的缓存前缀覆盖，属于冗余断点），新增 `system[last]` cache_control（序列化时对最后一个 system block 标记）。
 
 **变更前 4 断点**（实际有效 2-3 个）：
+
 1. `system[0]` cc — ~2K tokens
 2. `tools[last]` cc — 与断点 3 重叠
 3. `msg[first]` cc — ~30K tokens
 4. `msg[last]` cc — ~30K+ tokens
 
 **变更后 4 断点**（实际有效 3-4 个）：
+
 1. `system[0]` cc — 小粒度回退
 2. `system[last]` cc — **新增**，缓存整个 system（~17K tokens）
 3. `msg[first]` cc — system + tools + first user
 4. `msg[second-to-last]` cc — **Fix 1 使其生效**，缓存上一轮前缀
 
 **文件**：`rust-create-agent/src/llm/anthropic.rs`
+
 - 删除 tools cache_control（L472-478）
 - 新增 system[last] cache_control（序列化逻辑 L511-525）
 

@@ -1,6 +1,6 @@
 # DeepSeek Anthropic 兼容端口：SkillPreloadMiddleware 注入的伪 assistant 消息缺少 thinking block
 
-**状态**：Open
+**状态**：Fixed
 **优先级**：高
 **创建日期**：2026-05-14
 
@@ -22,14 +22,17 @@ DeepSeek 要求 thinking 模式下**所有** assistant 消息都必须回传 thi
 ### 代码定位
 
 `rust-agent-middlewares/src/subagent/skill_preload.rs:115`：
+
 ```rust
 state.add_message(BaseMessage::ai_from_blocks(tool_use_blocks));
 ```
+
 构造的 Ai 消息只有 `ToolUse` blocks，没有 `Reasoning`（thinking）block。
 
 ### 为什么不是"偶发"
 
 之前记录为"偶发"是因为需要同时满足两个条件：
+
 1. 开启 thinking 模式（DeepSeek）
 2. 用户输入触发 `/skill` 斜杠命令，导致 `SkillPreloadMiddleware` 注入伪消息
 
@@ -42,6 +45,7 @@ state.add_message(BaseMessage::ai_from_blocks(tool_use_blocks));
 请求数据路径：`data/2026-05-14_09-30-28-483_0041/`
 
 **请求体配置**：
+
 - `model`: `deepseek-v4-pro`
 - `thinking`: `{"budget_tokens": 8000, "type": "enabled"}`
 - `output_config`: `{"effort": "high"}`
@@ -67,6 +71,7 @@ msg[15] 是 `SkillPreloadMiddleware` 注入的伪消息，仅包含 `tool_use(Re
 请求数据路径：`data/2026-05-14_10-27-30-417_0060/`
 
 **请求体配置**：
+
 - `model`: `deepseek-v4-pro`
 - `thinking`: `{"budget_tokens": 8000, "type": "enabled"}`
 - `messages`: 18 条
