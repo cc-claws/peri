@@ -1,6 +1,7 @@
 # MCP 中间件与文件系统工具大文件拆分：client.rs 1309 行、grep.rs 1162 行
 
-**状态**：Open
+**状态**：Done（2026-05-15）
+**关闭原因**：三组拆分全部完成，763 测试零回归。3 commit 已合入 main。
 **优先级**：中
 **创建日期**：2026-05-14
 
@@ -79,3 +80,37 @@ middleware/
 - `peri-middlewares/src/subagent/tool.rs`（980 行）
 - `peri-middlewares/src/middleware/web.rs`（773 行）
 - `peri-middlewares/src/hooks/types.rs`（854 行）
+
+## 完成记录
+
+**完成日期**：2026-05-15
+
+### 实际变更
+
+| 计划 | 文件 | Before → After |
+|------|------|----------------|
+| MCP Client | `client.rs` | 1309 → 449 |
+| | `initialize.rs` | — → 425 |
+| | `reconnect.rs` | — → 192 |
+| | `client_oauth.rs` | — → 155 |
+| Grep Tool | `grep.rs` | 677 → 437 |
+| | `grep_args.rs` | — → 135 |
+| | `grep_format.rs` | — → 111 |
+| Web Middleware | `web.rs` | 559 → 40 |
+| | `web_common.rs` | — → 76 |
+| | `web_fetch.rs` | — → 139 |
+| | `web_search.rs` | — → 317 |
+
+### 差异说明
+
+- **`oauth.rs` → `client_oauth.rs`**：避免与已有 `oauth_flow.rs` 模块冲突。
+- **`initialize.rs` 含 `initialize()` 方法**：除 `run_initialize()` 外一并移入，职责一致。
+- **所有内部类型 `pub(crate)`**：仅 `filesystem` / `mcp` 模块内可见，外部 API 不变。
+
+### 测试
+
+763 pass / 0 fail，零回归。
+
+### 未处理
+
+- `subagent/tool.rs`（980 行）和 `hooks/types.rs`（854 行）仅作为"需要关注的文件"列出，不在本次拆分范围。
