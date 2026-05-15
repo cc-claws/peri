@@ -1283,5 +1283,5 @@ impl ReactLLM for ChatAnthropic {
 }
 
 #[cfg(test)]
-#[path = "anthropic_test.rs"]
+#[path = "../anthropic_test.rs"]
 mod tests;
