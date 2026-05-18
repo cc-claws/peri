@@ -39,55 +39,11 @@ impl App {
                 (false, false, false)
             }
             AcpNotification::Peri { method, params, .. } => {
-                match method.as_str() {
-                    "notifications/peri/subagent/start" => {
-                        let agent_name = params["agent_name"].as_str().unwrap_or("").to_string();
-                        self.handle_agent_event(super::AgentEvent::SubagentLifecycle {
-                            agent_name,
-                            started: true,
-                        })
-                    }
-                    "notifications/peri/subagent/end" => {
-                        let agent_name = params["agent_name"].as_str().unwrap_or("").to_string();
-                        let result = params["result"].as_str().unwrap_or("").to_string();
-                        let is_error = params["is_error"].as_bool().unwrap_or(false);
-                        self.handle_agent_event(super::AgentEvent::SubAgentEnd {
-                            agent_id: Some(agent_name),
-                            result,
-                            is_error,
-                        })
-                    }
-                    "notifications/peri/background/completed" => {
-                        let task_id = params["task_id"].as_str().unwrap_or("").to_string();
-                        let agent_name = params["agent_name"].as_str().unwrap_or("").to_string();
-                        let success = params["success"].as_bool().unwrap_or(false);
-                        let output = params["output"].as_str().unwrap_or("").to_string();
-                        let tool_calls_count =
-                            params["tool_calls_count"].as_u64().unwrap_or(0) as usize;
-                        let duration_ms = params["duration_ms"].as_u64().unwrap_or(0);
-                        self.handle_agent_event(super::AgentEvent::BackgroundTaskCompleted {
-                            task_id,
-                            agent_name,
-                            success,
-                            output,
-                            tool_calls_count,
-                            duration_ms,
-                        })
-                    }
-                    "notifications/peri/lsp/diagnostics" => {
-                        let errors = params["errors"].as_u64().unwrap_or(0) as usize;
-                        let warnings = params["warnings"].as_u64().unwrap_or(0) as usize;
-                        let files_with_errors =
-                            params["files_with_errors"].as_u64().unwrap_or(0) as usize;
-                        self.handle_agent_event(super::AgentEvent::LspDiagnostics {
-                            errors,
-                            warnings,
-                            files_with_errors,
-                        })
-                    }
-                    // Compact start/end, session ended — no TUI action needed
-                    _ => (false, false, false),
-                }
+                // peri/* notifications now only carry auxiliary events (Compact, SessionEnded)
+                // that TUI ignores. SubAgent/Background/LSP events arrive via agent_event path.
+                tracing::debug!(%method, "ACP→TUI: peri/* notification (no TUI action)");
+                let _ = params;
+                (false, false, false)
             }
             AcpNotification::Other { msg } => {
                 tracing::warn!(%msg, "Unhandled ACP notification");
