@@ -19,6 +19,10 @@ use tracing::{debug, info};
 use peri_acp::broker::AcpTransportBroker;
 use peri_acp::session::event_sink::TransportEventSink;
 use peri_acp::session::executor;
+pub use peri_acp::session::state_builders::{
+    apply_thinking_effort, build_config_options, build_mode_state, build_model_state,
+    parse_permission_mode,
+};
 use peri_acp::transport::types::{AcpError, IncomingMessage};
 use peri_agent::agent::AgentCancellationToken;
 use peri_agent::messages::BaseMessage;
@@ -28,11 +32,6 @@ use agent_client_protocol::schema::{
     AgentCapabilities, InitializeResponse, NewSessionResponse, PromptResponse, ProtocolVersion,
     SessionId, SetSessionConfigOptionResponse, SetSessionModeResponse, SetSessionModelResponse,
     StopReason,
-};
-use agent_client_protocol_schema::{
-    ModelId, ModelInfo, SessionConfigId, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionConfigSelectOptions, SessionConfigValueId, SessionMode,
-    SessionModeId, SessionModeState, SessionModelState,
 };
 
 use crate::app::agent::LlmProvider;
@@ -404,108 +403,6 @@ async fn execute_prompt(
     serde_json::to_value(resp).map_err(|e| AcpError::new(-32603, format!("Serialize failed: {e}")))
 }
 
-// ── ACP standard state builders ────────────────────────────────────────────────
+// ── ACP standard state builders (re-exported from peri-acp) ──────────────────
 
-pub fn parse_permission_mode(mode_id: &str) -> PermissionMode {
-    match mode_id {
-        "dont_ask" => PermissionMode::DontAsk,
-        "accept_edit" => PermissionMode::AcceptEdit,
-        "auto" => PermissionMode::AutoMode,
-        "bypass" => PermissionMode::Bypass,
-        _ => PermissionMode::Default,
-    }
-}
-
-pub fn apply_thinking_effort(peri_config: &RwLock<PeriConfig>, effort: &str) {
-    let mut cfg = peri_config.write();
-    let thinking = cfg
-        .config
-        .thinking
-        .get_or_insert_with(|| crate::config::ThinkingConfig {
-            enabled: true,
-            budget_tokens: 8000,
-            effort: "medium".to_string(),
-            max_tokens: 32000,
-        });
-    thinking.enabled = true;
-    thinking.effort = effort.to_string();
-}
-
-pub fn build_mode_state(pm: &SharedPermissionMode) -> SessionModeState {
-    let current = pm.load();
-    let current_id = match current {
-        PermissionMode::Default => "default",
-        PermissionMode::DontAsk => "dont_ask",
-        PermissionMode::AcceptEdit => "accept_edit",
-        PermissionMode::AutoMode => "auto",
-        PermissionMode::Bypass => "bypass",
-    };
-    let all_modes = vec![
-        SessionMode::new(SessionModeId::new("default"), "Default")
-            .description("All sensitive tools require approval"),
-        SessionMode::new(SessionModeId::new("dont_ask"), "Don't Ask")
-            .description("Default deny all bash"),
-        SessionMode::new(SessionModeId::new("accept_edit"), "Accept Edit")
-            .description("Allow filesystem edits"),
-        SessionMode::new(SessionModeId::new("auto"), "Auto Mode")
-            .description("LLM decides approval"),
-        SessionMode::new(SessionModeId::new("bypass"), "Bypass").description("Allow everything"),
-    ];
-    SessionModeState::new(SessionModeId::new(current_id), all_modes)
-}
-
-pub fn build_model_state(provider: &LlmProvider, peri_config: &PeriConfig) -> SessionModelState {
-    let active_alias = peri_config.config.active_alias.clone();
-
-    let active_provider = peri_config.config.providers.iter().find(|prov| {
-        prov.id == peri_config.config.active_provider_id
-            || peri_config.config.active_provider_id.is_empty()
-    });
-
-    let mut available = Vec::new();
-    if let Some(prov) = active_provider {
-        for alias in ["opus", "sonnet", "haiku"] {
-            if let Some(model_name) = prov.models.get_model(alias) {
-                if !model_name.is_empty() {
-                    available.push(ModelInfo::new(
-                        ModelId::new(alias.to_string()),
-                        format!("{} ({})", alias, model_name),
-                    ));
-                }
-            }
-        }
-    }
-    if available.is_empty() {
-        available.push(ModelInfo::new(
-            ModelId::new("current".to_string()),
-            provider.model_name().to_string(),
-        ));
-    }
-
-    SessionModelState::new(ModelId::new(active_alias), available)
-}
-
-pub fn build_config_options(peri_config: &PeriConfig) -> Vec<SessionConfigOption> {
-    let effort = peri_config
-        .config
-        .thinking
-        .as_ref()
-        .map(|t| t.effort.as_str())
-        .unwrap_or("medium");
-
-    let thinking_options = vec![
-        SessionConfigSelectOption::new(SessionConfigValueId::new("low"), "Low".to_string()),
-        SessionConfigSelectOption::new(SessionConfigValueId::new("medium"), "Medium".to_string()),
-        SessionConfigSelectOption::new(SessionConfigValueId::new("high"), "High".to_string()),
-        SessionConfigSelectOption::new(SessionConfigValueId::new("xhigh"), "XHigh".to_string()),
-        SessionConfigSelectOption::new(SessionConfigValueId::new("max"), "Max".to_string()),
-    ];
-
-    vec![SessionConfigOption::select(
-        SessionConfigId::new("thinking_effort"),
-        "Thinking Effort",
-        SessionConfigValueId::new(effort),
-        SessionConfigSelectOptions::Ungrouped(thinking_options),
-    )
-    .category(SessionConfigOptionCategory::ThoughtLevel)]
-}
+// Re-exports live at the top of this file as `pub use peri_acp::session::state_builders::*`.

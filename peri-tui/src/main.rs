@@ -15,7 +15,7 @@ use std::io;
 
 use peri_acp::transport::mpsc::mpsc_transport_pair;
 use peri_tui::acp_client::AcpTuiClient;
-use peri_tui::acp_server::{self, AcpServerConfig};
+use peri_tui::acp_server::{run_acp_server, AcpServerConfig};
 use peri_tui::app::App;
 use peri_tui::event;
 use peri_tui::ui;
@@ -344,6 +344,10 @@ async fn run_acp_stdio(cwd: String) -> Result<()> {
     use agent_client_protocol_tokio::Stdio;
     use peri_acp::session::event_sink::StdioEventSink;
     use peri_acp::session::executor;
+    use peri_acp::session::state_builders::{
+        apply_thinking_effort, build_config_options, build_mode_state, build_model_state,
+        parse_permission_mode,
+    };
     use peri_agent::agent::AgentCancellationToken;
 
     let ctx_clone = ctx.clone();
@@ -382,15 +386,15 @@ async fn run_acp_stdio(cwd: String) -> Result<()> {
                     );
                     tracing::info!(session_id = %sid, "ACP session created");
                     drop(sessions);
-                    let modes = acp_server::build_mode_state(&ctx.permission_mode);
+                    let modes = build_mode_state(&ctx.permission_mode);
                     let models = {
                         let p = ctx.provider.read();
                         let c = ctx.peri_config.read();
-                        acp_server::build_model_state(&p, &c)
+                        build_model_state(&p, &c)
                     };
                     let config_options = {
                         let c = ctx.peri_config.read();
-                        acp_server::build_config_options(&c)
+                        build_config_options(&c)
                     };
                     responder.respond(
                         NewSessionResponse::new(SessionId::new(&*sid))
@@ -485,7 +489,7 @@ async fn run_acp_stdio(cwd: String) -> Result<()> {
                 let ctx = ctx_clone.clone();
                 async move |req: SetSessionModeRequest, responder, _cx| {
                     let mode_id = req.mode_id.0.as_ref();
-                    let mode = acp_server::parse_permission_mode(mode_id);
+                    let mode = parse_permission_mode(mode_id);
                     ctx.permission_mode.store(mode);
                     tracing::info!(mode_id = %mode_id, "Permission mode changed");
                     responder.respond(SetSessionModeResponse::new())
@@ -522,7 +526,7 @@ async fn run_acp_stdio(cwd: String) -> Result<()> {
                         agent_client_protocol_schema::SessionConfigOptionValue::ValueId { value } => {
                             let effort = value.0.as_ref();
                             if config_id == "thinking_effort" {
-                                acp_server::apply_thinking_effort(&ctx.peri_config, effort);
+                                apply_thinking_effort(&ctx.peri_config, effort);
                                 tracing::info!(effort = %effort, "Thinking effort changed via configOption");
                             }
                         }
@@ -535,7 +539,7 @@ async fn run_acp_stdio(cwd: String) -> Result<()> {
                     }
                     let config_options = {
                         let cfg = ctx.peri_config.read();
-                        acp_server::build_config_options(&cfg)
+                        build_config_options(&cfg)
                     };
                     responder.respond(SetSessionConfigOptionResponse::new(config_options))
                 }
@@ -770,7 +774,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
             let (client_transport, server_transport) = mpsc_transport_pair();
             tokio::spawn(async move {
-                acp_server::run_acp_server(Arc::new(server_transport), server_config).await;
+                run_acp_server(Arc::new(server_transport), server_config).await;
             });
 
             let (acp_client, notification_rx) = AcpTuiClient::new(client_transport);
