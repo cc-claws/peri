@@ -157,13 +157,42 @@ pub async fn execute_prompt(
             lsp_servers: lsp_servers.clone(),
         });
 
+        // 转发 todo 更新为 ExecutorEvent::TodoUpdate
+        let mut todo_rx = agent_output.todo_rx;
+        let tx_for_todo = event_tx.clone();
+        tokio::spawn(async move {
+            while let Some(todos) = todo_rx.recv().await {
+                let entries: Vec<peri_agent::agent::events::TodoEntry> = todos
+                    .into_iter()
+                    .map(|t| peri_agent::agent::events::TodoEntry {
+                        content: t.content,
+                        active_form: t.active_form,
+                        status: match t.status {
+                            peri_middlewares::tools::todo::TodoStatus::Pending => {
+                                peri_agent::agent::events::TodoStatus::Pending
+                            }
+                            peri_middlewares::tools::todo::TodoStatus::InProgress => {
+                                peri_agent::agent::events::TodoStatus::InProgress
+                            }
+                            peri_middlewares::tools::todo::TodoStatus::Completed => {
+                                peri_agent::agent::events::TodoStatus::Completed
+                            }
+                        },
+                    })
+                    .collect();
+                if let Some(tx) = tx_for_todo.lock().unwrap().as_ref() {
+                    let _ = tx.send(ExecutorEvent::TodoUpdate(entries));
+                }
+            }
+        });
+
         // Execute agent
         let mut agent_state = AgentState::with_messages(cwd.to_string(), current_history);
         let result = agent_output
             .executor
             .execute(agent_input.clone(), &mut agent_state, Some(cancel.clone()))
             .await;
-        drop(agent_output);
+        drop(agent_output.executor);
 
         let ok = result.is_ok();
         if let Err(e) = &result {

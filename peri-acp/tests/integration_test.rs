@@ -101,3 +101,50 @@ async fn test_event_mapper_text_chunk() {
     let updates = map_executor_to_updates(&event, 200000);
     assert!(!updates.is_empty(), "TextChunk must produce SessionUpdate");
 }
+
+#[test]
+fn test_event_mapper_todo_update_maps_to_plan() {
+    use agent_client_protocol::schema::{PlanEntryPriority, PlanEntryStatus, SessionUpdate};
+    use peri_acp::event::map_executor_to_updates;
+    use peri_agent::agent::events::{AgentEvent as ExecutorEvent, TodoEntry, TodoStatus};
+
+    let event = ExecutorEvent::TodoUpdate(vec![
+        TodoEntry {
+            content: "Fix the bug".into(),
+            active_form: Some("Fixing the bug".into()),
+            status: TodoStatus::InProgress,
+        },
+        TodoEntry {
+            content: "Write tests".into(),
+            active_form: None,
+            status: TodoStatus::Pending,
+        },
+        TodoEntry {
+            content: "Done task".into(),
+            active_form: None,
+            status: TodoStatus::Completed,
+        },
+    ]);
+
+    let updates = map_executor_to_updates(&event, 200000);
+    assert_eq!(
+        updates.len(),
+        1,
+        "TodoUpdate must produce exactly one SessionUpdate"
+    );
+
+    match &updates[0] {
+        SessionUpdate::Plan(plan) => {
+            assert_eq!(plan.entries.len(), 3);
+            assert_eq!(plan.entries[0].content, "Fix the bug");
+            assert_eq!(plan.entries[0].status, PlanEntryStatus::InProgress);
+            assert_eq!(plan.entries[1].content, "Write tests");
+            assert_eq!(plan.entries[1].status, PlanEntryStatus::Pending);
+            assert_eq!(plan.entries[2].content, "Done task");
+            assert_eq!(plan.entries[2].status, PlanEntryStatus::Completed);
+            // TodoItem 无 priority，默认 Medium
+            assert_eq!(plan.entries[0].priority, PlanEntryPriority::Medium);
+        }
+        other => panic!("Expected SessionUpdate::Plan, got {:?}", other),
+    }
+}

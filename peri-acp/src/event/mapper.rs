@@ -5,8 +5,9 @@
 //! for SubAgent, Compact, LSP, Background tasks, and Session lifecycle events.
 
 use agent_client_protocol::schema::{
-    ContentBlock, ContentChunk, SessionInfoUpdate, SessionUpdate, TextContent, ToolCall,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
+    ContentBlock, ContentChunk, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus,
+    SessionInfoUpdate, SessionUpdate, TextContent, ToolCall, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use peri_agent::agent::events::AgentEvent as ExecutorEvent;
 use serde_json::json;
@@ -88,6 +89,29 @@ pub fn map_executor_to_updates(event: &ExecutorEvent, context_window: u32) -> Ve
                     attempt, max_attempts, delay_ms
                 )),
             )]
+        }
+        ExecutorEvent::TodoUpdate(entries) => {
+            let plan_entries: Vec<PlanEntry> = entries
+                .iter()
+                .map(|e| {
+                    PlanEntry::new(
+                        e.content.clone(),
+                        PlanEntryPriority::Medium,
+                        match e.status {
+                            peri_agent::agent::events::TodoStatus::Pending => {
+                                PlanEntryStatus::Pending
+                            }
+                            peri_agent::agent::events::TodoStatus::InProgress => {
+                                PlanEntryStatus::InProgress
+                            }
+                            peri_agent::agent::events::TodoStatus::Completed => {
+                                PlanEntryStatus::Completed
+                            }
+                        },
+                    )
+                })
+                .collect();
+            vec![SessionUpdate::Plan(Plan::new(plan_entries))]
         }
         // 内部事件、LLM 调用事件等不映射
         _ => vec![],

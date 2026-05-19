@@ -17,6 +17,27 @@ pub struct CompactFileInfo {
     pub lines: usize,
 }
 
+/// Todo 列表条目（用于 ExecutorEvent::TodoUpdate）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct TodoEntry {
+    pub content: String,
+    #[serde(
+        default,
+        rename = "activeForm",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub active_form: Option<String>,
+    pub status: TodoStatus,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
 /// Agent 执行过程中的增量事件
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
@@ -113,6 +134,8 @@ pub enum AgentEvent {
     },
     /// 上下文压缩失败
     CompactError { message: String },
+    /// Todo 列表更新
+    TodoUpdate(Vec<TodoEntry>),
     /// LSP 诊断更新
     LspDiagnostics {
         errors: usize,

@@ -167,5 +167,32 @@ pub(crate) fn map_executor_event(event: ExecutorEvent, cwd: &str) -> Option<Agen
         },
         ExecutorEvent::CompactError { message } => AgentEvent::CompactError(message),
         ExecutorEvent::SessionEnded => return None,
+        ExecutorEvent::TodoUpdate(entries) => AgentEvent::TodoUpdate(
+            entries
+                .iter()
+                .map(|e| {
+                    use peri_middlewares::tools::todo::{TodoItem, TodoStatus as TuiTodoStatus};
+                    TodoItem {
+                        content: e.content.clone(),
+                        active_form: e.active_form.clone(),
+                        status: match e.status {
+                            peri_agent::agent::events::TodoStatus::Pending => {
+                                TuiTodoStatus::Pending
+                            }
+                            peri_agent::agent::events::TodoStatus::InProgress => {
+                                TuiTodoStatus::InProgress
+                            }
+                            peri_agent::agent::events::TodoStatus::Completed => {
+                                TuiTodoStatus::Completed
+                            }
+                        },
+                    }
+                })
+                .collect(),
+        ),
     })
 }
+
+#[cfg(test)]
+#[path = "agent_test.rs"]
+mod tests;
