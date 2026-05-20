@@ -23,6 +23,7 @@
 ### prepend_message
 - [Skill Preload 注入消息到历史最前面导致首轮 Prompt Cache 失效](domains/message-pipeline.md#issue_2026-05-12-skill-preload-invalidates-prompt-cache) — message-pipeline
 - [prepend_message 的 insert(0) 右移导致 StateSnapshot 包含 System 消息](domains/system-prompt.md#issue_2026-05-13-system-prompt-dynamic-parts-duplicated-in-consecutive-calls) — system-prompt
+- [System Prompt 每轮重复注入 prepend_message 导致上下文倍数膨胀](domains/system-prompt.md#issue_2026-05-20-rapid-context-expansion) — system-prompt
 
 ### add_message
 - [Skill Preload 注入消息到历史最前面导致首轮 Prompt Cache 失效](domains/message-pipeline.md#issue_2026-05-12-skill-preload-invalidates-prompt-cache) — message-pipeline
@@ -654,6 +655,7 @@
 
 ### reconcile
 - [Pipeline/渲染层大文件拆分：message_pipeline.rs + message_view.rs](domains/message-pipeline.md#issue_2026-05-17-pipeline-render-heavy-files) — message-pipeline
+- [LLM 错误路径 round_start_vm_idx 被重置后视图清空闪烁](domains/message-pipeline.md#issue_2026-05-20-llm-error-message-area-clear-flicker) — message-pipeline
 
 ### session index 竞态
 - [分屏模式下非活跃 Session 命令浮层显示异常](domains/tui.md#issue_2026-05-12-split-session-command-hint-only-shows-active) — tui
@@ -797,6 +799,69 @@
 ### SystemNote泄漏
 - [Session 恢复后 System Prompt 和 Compact Summary 被渲染为可见消息](domains/message-pipeline.md#issue_2026-05-20-session-restore-renders-system-prompt) — message-pipeline
 
+### /compact 命令
+- [手动 /compact 命令作为普通文本发给 LLM 未触发压缩](domains/compact.md#issue_2026-05-20-compact-command-not-triggering) — compact
+
+### ACP compact 通道
+- [手动 /compact 命令作为普通文本发给 LLM 未触发压缩](domains/compact.md#issue_2026-05-20-compact-command-not-triggering) — compact
+
+### loading spinner
+- [手动 /compact 命令作为普通文本发给 LLM 未触发压缩](domains/compact.md#issue_2026-05-20-compact-command-not-triggering) — compact
+
+### session 同步
+- [手动 /compact 命令作为普通文本发给 LLM 未触发压缩](domains/compact.md#issue_2026-05-20-compact-command-not-triggering) — compact
+
+### compact messages 为空
+- [Auto compact 摘要放入 BaseMessage::system 导致 LLM 适配器提取后 messages 数组为空](domains/compact.md#issue_2026-05-20-auto-compact-empty-messages-400) — compact
+
+### BaseMessage::system vs human
+- [Auto compact 摘要放入 BaseMessage::system 导致 LLM 适配器提取后 messages 数组为空](domains/compact.md#issue_2026-05-20-auto-compact-empty-messages-400) — compact
+
+### LLM 适配器提取
+- [Auto compact 摘要放入 BaseMessage::system 导致 LLM 适配器提取后 messages 数组为空](domains/compact.md#issue_2026-05-20-auto-compact-empty-messages-400) — compact
+
+### DeepSeek 400
+- [Auto compact 摘要放入 BaseMessage::system 导致 LLM 适配器提取后 messages 数组为空](domains/compact.md#issue_2026-05-20-auto-compact-empty-messages-400) — compact
+
+### round_start_vm_idx
+- [LLM 错误路径 round_start_vm_idx 被重置后视图清空闪烁](domains/message-pipeline.md#issue_2026-05-20-llm-error-message-area-clear-flicker) — message-pipeline
+
+### AgentExecutionFailed
+- [LLM 错误路径 round_start_vm_idx 被重置后视图清空闪烁](domains/message-pipeline.md#issue_2026-05-20-llm-error-message-area-clear-flicker) — message-pipeline
+
+### 视图清空
+- [LLM 错误路径 round_start_vm_idx 被重置后视图清空闪烁](domains/message-pipeline.md#issue_2026-05-20-llm-error-message-area-clear-flicker) — message-pipeline
+
+### LLM 错误路径
+- [LLM 错误路径 round_start_vm_idx 被重置后视图清空闪烁](domains/message-pipeline.md#issue_2026-05-20-llm-error-message-area-clear-flicker) — message-pipeline
+
+### Frozen Session Data
+- [System Prompt 每轮重复注入 prepend_message 导致上下文倍数膨胀](domains/system-prompt.md#issue_2026-05-20-rapid-context-expansion) — system-prompt
+
+### system prompt 膨胀
+- [System Prompt 每轮重复注入 prepend_message 导致上下文倍数膨胀](domains/system-prompt.md#issue_2026-05-20-rapid-context-expansion) — system-prompt
+
+### StateSnapshot
+- [System Prompt 每轮重复注入 prepend_message 导致上下文倍数膨胀](domains/system-prompt.md#issue_2026-05-20-rapid-context-expansion) — system-prompt
+
+### 上下文爆炸
+- [System Prompt 每轮重复注入 prepend_message 导致上下文倍数膨胀](domains/system-prompt.md#issue_2026-05-20-rapid-context-expansion) — system-prompt
+
+### VS Code 终端
+- [Mac Option+Backspace 在 VS Code 终端被映射为 PageUp 导致滚动而非删除](domains/tui.md#issue_2026-05-12-macos-option-backspace-scrolls-when-content-present) — tui
+
+### Option+Backspace
+- [Mac Option+Backspace 在 VS Code 终端被映射为 PageUp 导致滚动而非删除](domains/tui.md#issue_2026-05-12-macos-option-backspace-scrolls-when-content-present) — tui
+
+### PageUp 映射
+- [Mac Option+Backspace 在 VS Code 终端被映射为 PageUp 导致滚动而非删除](domains/tui.md#issue_2026-05-12-macos-option-backspace-scrolls-when-content-present) — tui
+
+### 词删除
+- [Mac Option+Backspace 在 VS Code 终端被映射为 PageUp 导致滚动而非删除](domains/tui.md#issue_2026-05-12-macos-option-backspace-scrolls-when-content-present) — tui
+
+### TERM_PROGRAM
+- [Mac Option+Backspace 在 VS Code 终端被映射为 PageUp 导致滚动而非删除](domains/tui.md#issue_2026-05-12-macos-option-backspace-scrolls-when-content-present) — tui
+
 ## 更新记录
 
 - 2026-05-13: 首次创建，归档 22 个 issue，提取 14 条领域认知
@@ -810,3 +875,4 @@
 - 2026-05-18: 归档 11 个 Fixed issue（agent 1 + tui 4 + acp 1 + langfuse 1 + message-pipeline 1 + plugin 1 + code-architecture 2），13 个新关键词条目
 - 2026-05-20: 归档 7 个 issue，新增 27 个关键词索引
 - 2026-05-20: 归档 1 个 issue，新增 4 个关键词索引（session恢复/System消息过滤/messages_to_view_models/SystemNote泄漏）
+- 2026-05-20: 归档 5 个 issue（compact 2, message-pipeline 1, system-prompt 1, tui 1），新增 24 个关键词索引

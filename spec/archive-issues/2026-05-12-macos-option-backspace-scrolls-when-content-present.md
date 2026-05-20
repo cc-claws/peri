@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-12-macos-option-backspace-scrolls-when-content-present.md
+
 # Mac 上 Option+Backspace 在有可滚动内容时触发滚动而非删除整行
 
 **状态**：Fixed

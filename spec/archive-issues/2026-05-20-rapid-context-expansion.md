@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-20-rapid-context-expansion.md
+
 # System Prompt 每轮重复注入导致上下文膨胀
 
 **状态**：Fixed

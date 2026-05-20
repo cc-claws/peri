@@ -195,6 +195,18 @@ reconcile_tail(round_start_vm_idx)
 **涉及文件:** peri-tui/src/app/thread_ops.rs, peri-tui/src/app/message_pipeline/transform.rs, peri-tui/src/ui/message_view/mod.rs
 **CLAUDE.md 链接:** true
 
+### issue_2026-05-20-llm-error-message-area-clear-flicker
+**摘要:** LLM 返回 400 时消息区域闪烁清空回到空白页
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** round_start_vm_idx, AgentExecutionFailed, reconcile, 视图清空, LLM 错误路径
+**问题本质:** Compact 后 round_start_vm_idx 被重置为 0，若 compact 后的 LLM 调用在 StateSnapshot 到达前失败，handle_done() 以 prefix_len=0 触发 rebuild，build_tail_vms() 因 has_snapshot_this_round=false 返回空 tail，drain(0..) 完全清空视图
+**通用模式:** LLM 执行失败路径必须始终通知前端（发送 Error 事件），前端 rebuild 逻辑不能假设 round_start_vm_idx 在某状态下安全——必须考虑所有可能的执行失败场景
+**架构影响:** 与 compact 架构改造联动——从「外层 loop + resubmit」改为「CompactMiddleware 作为 before_model 钩子」消除了 compact 后独立 LLM 调用失败的场景
+**技术决策:** Executor 新增 AgentExecutionFailed 事件确保所有错误路径都通知前端
+**涉及文件:** peri-acp/src/session/executor.rs, peri-middlewares/src/compact_middleware.rs, peri-acp/src/session/compact_runner.rs, peri-tui/src/app/agent_compact.rs, peri-tui/src/app/message_pipeline/mod.rs
+**CLAUDE.md 链接:** true
+
 ---
 
 ## 相关 Feature

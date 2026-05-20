@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-20-llm-error-message-area-clear-flicker.md
+
 # LLM 返回 400 时消息区域闪烁清空回到空白页
 
 **状态**：Fixed

@@ -761,6 +761,16 @@ submit_message(text)
 **涉及文件:** peri-tui/src/ui/main_ui.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-12-macos-option-backspace-scrolls-when-content-present
+**摘要:** Mac 上 Option+Backspace 在有可滚动内容时触发滚动而非删除整行
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** VS Code 终端, Option+Backspace, PageUp 映射, 词删除, TERM_PROGRAM
+**问题本质:** VS Code 集成终端在 Mac 上将 Option+Backspace 映射为 PageUp 转义序列，crossterm 解释为 PageUp 事件，事件处理层未区分终端环境导致被无条件用于消息区域滚动
+**通用模式:** 终端快捷键映射受终端模拟器环境（TERM_PROGRAM）影响——VS Code、iTerm2、Terminal.app 对相同物理按键可能产生不同转义序列；事件处理需兼顾语义意图（用户想删除词）和终端环境差异
+**涉及文件:** peri-tui/src/event/keyboard.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

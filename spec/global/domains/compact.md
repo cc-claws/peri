@@ -87,6 +87,30 @@
 **涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/app/agent_ops.rs, peri-tui/src/app/agent_comm.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-20-compact-command-not-triggering
+**摘要:** /compact 命令作为普通文本发给 LLM，未触发压缩
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** /compact 命令, ACP compact 通道, loading spinner, session 同步
+**问题本质:** /compact 命令处理器未接入 ACP compact 管道，将命令文本当作普通用户消息发送给 LLM；compact 期间缺少 loading 状态和用户可见错误反馈
+**通用模式:** 所有 TUI 命令必须通过正确的 ACP 协议通道（compact/set_model/set_mode 等）触发操作，不能将命令文本作为普通消息提交；compact 这类异步操作需要完整的 UI 状态管理（loading spinner + 错误反馈）
+**架构影响:** Compact 触发路径统一收敛到 ACP compact 通道（acp_client.compact() → ACP Server → compact_runner），命令处理器和 auto-compact 虽触发点不同但最终汇合
+**技术决策:** TUI 命令 → ACP client → ACP server → compact runner 的分层架构，命令处理器不直接操作 compact 逻辑
+**涉及文件:** peri-tui/src/command/session/compact.rs, peri-tui/src/app/agent_compact.rs, peri-tui/src/app/agent_ops/polling.rs, peri-tui/src/app/agent_comm.rs, peri-tui/src/app/thread_ops.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-20-auto-compact-empty-messages-400
+**摘要:** Auto compact 后 LLM 请求 messages 为空导致 400 错误
+**状态:** Fixed
+**归档日期:** 2026-05-20
+**关键词:** compact messages 为空, BaseMessage::system vs human, LLM 适配器提取, DeepSeek 400
+**问题本质:** Compact 摘要被放入 BaseMessage::system()，LLM 适配器（messages_to_json/messages_to_anthropic）将 System 消息提取到 system 字段不进入 messages 数组，导致发给 API 的 messages 数组为空
+**通用模式:** 发给 LLM API 的 messages 数组必须始终包含至少一条非 System 消息（Human 或 Ai）；任何向消息列表插入的内容如果可能被 LLM 适配器提取到顶层字段（system、tools 等），必须验证剩余 messages 数组非空
+**架构影响:** Compact 架构从「外层 loop + resubmit」改为「CompactMiddleware 作为 before_model 钩子在 ReAct 循环内原地处理」，消除了 compact 后独立 LLM 调用的脆弱性
+**技术决策:** CompactMiddleware 替代 compact_runner 的 before_model 钩子模式，摘要始终使用 BaseMessage::human() 确保 LLM 适配器提取 System 后 messages 数组有效
+**涉及文件:** peri-middlewares/src/compact_middleware.rs, peri-acp/src/session/compact_runner.rs, peri-acp/src/session/executor.rs, peri-tui/src/acp_server/compact.rs
+**CLAUDE.md 链接:** true
+
 ---
 
 ## 相关 Feature

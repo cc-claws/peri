@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-20-compact-command-not-triggering.md
+
 # /compact 命令作为普通文本发给 LLM，未触发压缩
 
 **状态**：Fixed

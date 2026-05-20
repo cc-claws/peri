@@ -1,3 +1,5 @@
+> 归档于 2026-05-20，原路径 spec/issues/2026-05-20-auto-compact-empty-messages-400.md
+
 # Auto compact 后 LLM 请求 messages 为空导致 400 错误
 
 **状态**：Fixed
