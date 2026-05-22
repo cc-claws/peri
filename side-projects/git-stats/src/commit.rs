@@ -72,11 +72,12 @@ pub struct CoAuthor {
 
 /// A parsed commit with all relevant fields
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ParsedCommit {
+    #[allow(dead_code)]
     pub hash: String,
     pub author_name: String,
     pub author_email: String,
+    #[allow(dead_code)]
     pub subject: String,
     pub commit_type: CommitType,
     pub co_authors: Vec<CoAuthor>,

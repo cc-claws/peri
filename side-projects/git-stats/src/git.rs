@@ -3,7 +3,6 @@ use std::process::Command;
 use crate::commit::{parse_co_authors, CommitType, FileChange, ParsedCommit};
 
 /// Build the `git log` command with time window and format.
-#[allow(dead_code)]
 fn build_git_command(repo: &str, since: &str, until: &str) -> Command {
     let mut cmd = Command::new("git");
     cmd.args([
@@ -21,7 +20,6 @@ fn build_git_command(repo: &str, since: &str, until: &str) -> Command {
 }
 
 /// Run git log and parse output into Vec<ParsedCommit>.
-#[allow(dead_code)]
 pub fn fetch_commits(repo: &str, since: &str, until: &str) -> Result<Vec<ParsedCommit>, String> {
     let output = build_git_command(repo, since, until)
         .output()
@@ -37,7 +35,6 @@ pub fn fetch_commits(repo: &str, since: &str, until: &str) -> Result<Vec<ParsedC
 }
 
 /// Parse the raw git log output into structured commits.
-#[allow(dead_code)]
 fn parse_log_output(raw: &str) -> Result<Vec<ParsedCommit>, String> {
     let mut commits = Vec::new();
     for block in raw.split("@@COMMIT@@").skip(1) {
