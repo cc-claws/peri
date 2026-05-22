@@ -351,11 +351,18 @@ export function createHandler(config: GatewayConfig) {
     return function handler(req: Request): Response | Promise<Response> {
         const { pathname } = new URL(req.url);
 
-        if (
-            pathname.startsWith("/v1/chat/completions") ||
-            pathname.startsWith("/v1/responses") ||
-            pathname.startsWith("/v1/models")
-        ) {
+        // Anthropic 路由优先匹配（含不带 /v1 前缀的情况）
+        if (pathname === "/messages" || pathname.startsWith("/v1/messages")) {
+            return proxyRequest(
+                config,
+                "[anthropic]",
+                config.anthropicBase,
+                pathname.startsWith("/v1/") ? pathname : `/v1${pathname}`,
+                req,
+            );
+        }
+        // OpenAI 路由：/v1/* 通配 + 无前缀自动补 /v1
+        if (pathname.startsWith("/v1/")) {
             return proxyRequest(
                 config,
                 "[openai]",
@@ -364,12 +371,24 @@ export function createHandler(config: GatewayConfig) {
                 req,
             );
         }
-        if (pathname.startsWith("/v1/messages")) {
+        // 兜底：常见 OpenAI 路径（不带 /v1 前缀）自动补 /v1 转发
+        if (
+            pathname.startsWith("/chat/") ||
+            pathname.startsWith("/completions") ||
+            pathname.startsWith("/models") ||
+            pathname.startsWith("/embeddings") ||
+            pathname.startsWith("/images/") ||
+            pathname.startsWith("/audio/") ||
+            pathname.startsWith("/responses") ||
+            pathname.startsWith("/moderations") ||
+            pathname.startsWith("/files") ||
+            pathname.startsWith("/batches")
+        ) {
             return proxyRequest(
                 config,
-                "[anthropic]",
-                config.anthropicBase,
-                pathname,
+                "[openai]",
+                config.openaiBase,
+                `/v1${pathname}`,
                 req,
             );
         }
@@ -380,12 +399,14 @@ export function createHandler(config: GatewayConfig) {
             return Response.json({
                 gateway: "llm-gateway",
                 routes: {
-                    "/v1/chat/completions": `→ ${config.openaiBase}/v1/chat/completions`,
+                    "/v1/*": `→ ${config.openaiBase}/v1/*`,
                     "/v1/messages": `→ ${config.anthropicBase}/v1/messages`,
-                    "/v1/models": `→ ${config.openaiBase}/v1/models`,
                     "/health": "health check",
                 },
             });
+        }
+        if (config.logLevel !== "none") {
+            logC(31, `✖ 404  ${req.method} ${pathname}`);
         }
         return new Response("Not Found", { status: 404 });
     };
@@ -406,18 +427,12 @@ if (import.meta.main) {
     console.log();
     console.log("Routes:");
     console.log(
-        `  POST /v1/chat/completions  → ${config.openaiBase}/v1/chat/completions`,
+        `  /v1/* (except /v1/messages) → ${config.openaiBase}/v1/*`,
     );
     console.log(
-        `  POST /v1/responses         → ${config.openaiBase}/v1/responses`,
+        `  /v1/messages                → ${config.anthropicBase}/v1/messages`,
     );
-    console.log(
-        `  GET  /v1/models            → ${config.openaiBase}/v1/models`,
-    );
-    console.log(
-        `  POST /v1/messages          → ${config.anthropicBase}/v1/messages`,
-    );
-    console.log(`  GET  /health               → health check`);
+    console.log(`  /health                     → health check`);
     console.log();
     console.log(`  LOG_LEVEL = ${config.logLevel}`);
     console.log(`  LOG_DIR   = ${config.logDir}`);

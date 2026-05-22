@@ -147,7 +147,7 @@ describe("createHandler 路由", () => {
     const res = handler(new Request("http://localhost:3456/"));
     const body = await res.json();
     expect(body.gateway).toBe("llm-gateway");
-    expect(body.routes["/v1/chat/completions"]).toContain("api.openai.com");
+    expect(body.routes["/v1/*"]).toContain("api.openai.com");
     expect(body.routes["/v1/messages"]).toContain("api.anthropic.com");
     expect(body.routes["/health"]).toBe("health check");
   });
@@ -244,6 +244,30 @@ describe("createHandler 路由", () => {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ model: "gpt-4" }),
+        }),
+      );
+      expect(res.status).toBe(200);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("/v1/* 通配路由覆盖非白名单路径", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => {
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    try {
+      // 之前 404 的路径现在应该被代理
+      const res = await handler(
+        new Request("http://localhost:3456/v1/embeddings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "text-embedding-3-small", input: "hi" }),
         }),
       );
       expect(res.status).toBe(200);
