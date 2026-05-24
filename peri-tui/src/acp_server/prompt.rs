@@ -142,6 +142,8 @@ pub(crate) async fn execute_prompt(
         plugin_lsp_servers.to_vec(),
         langfuse_session,
         pool,
+        Some(Arc::clone(thread_store)),
+        Some(thread_id.clone()),
     )
     .await;
 

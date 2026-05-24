@@ -496,6 +496,8 @@ pub async fn run_acp_stdio(cwd: String) -> anyhow::Result<()> {
                             ctx_for_task.plugin_lsp_servers.clone(),
                             ctx_for_task.langfuse_session.clone(),
                             pool_arc.clone(),
+                            Some(Arc::clone(&ctx_for_task.thread_store)),
+                            Some(thread_id.clone()),
                         )
                         .await;
 

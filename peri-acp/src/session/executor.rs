@@ -115,6 +115,8 @@ pub async fn execute_prompt(
     lsp_servers: Vec<peri_lsp::config::LspServerConfig>,
     langfuse_session: Option<Arc<LangfuseSession>>,
     pool: Arc<parking_lot::Mutex<AgentPool>>,
+    thread_store: Option<Arc<dyn peri_agent::thread::ThreadStore>>,
+    thread_id: Option<String>,
 ) -> PromptResult {
     let trace_input = content.text_content();
     let agent_input = if incoming_recalls.is_empty() {
@@ -331,6 +333,8 @@ pub async fn execute_prompt(
             compact_budget: if disable_compact { None } else { Some(budget) },
             compact_model, // already Option<Arc<dyn BaseModel>> from pool/fresh logic
             compact_event_tx: Some(event_tx.clone()),
+            thread_store,
+            parent_thread_id: thread_id,
         },
         cached_llm.as_ref(),
     );

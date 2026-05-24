@@ -79,6 +79,10 @@ pub struct AcpAgentConfig {
     /// 事件通道（CompactMiddleware 发送 compact 事件）
     pub compact_event_tx:
         Option<Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<ExecutorEvent>>>>>,
+    /// Thread persistence store for child thread creation (None = non-persistent)
+    pub thread_store: Option<Arc<dyn peri_agent::thread::ThreadStore>>,
+    /// Parent thread ID for child thread hierarchy (None = top-level agent)
+    pub parent_thread_id: Option<String>,
 }
 
 pub struct AcpAgentOutput {
@@ -132,6 +136,8 @@ pub fn build_agent(
         compact_budget: mw_compact_budget,
         compact_model: mw_compact_model,
         compact_event_tx: mw_compact_event_tx,
+        thread_store,
+        parent_thread_id,
     } = cfg;
 
     // 应用 agent overrides 到系统提示词
@@ -273,6 +279,12 @@ pub fn build_agent(
     .with_background_registry(Arc::clone(&background_registry))
     .with_bg_event_sender(bg_event_tx)
     .with_registered_hooks(vec![]);
+    if let Some(ts) = thread_store {
+        subagent = subagent.with_thread_store(ts);
+    }
+    if let Some(pti) = parent_thread_id {
+        subagent = subagent.with_parent_thread_id(pti);
+    }
     if let Some(factory) = child_handler_factory {
         subagent = subagent.with_child_handler_factory(factory);
     }
