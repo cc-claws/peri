@@ -184,6 +184,8 @@ impl CompactMiddleware {
                     message: "已取消".to_string(),
                 });
                 self.fire_hooks(hooks::types::HookEvent::PostCompact, msg_count).await;
+                // RESTORE: compact 被取消，own_messages 丢弃前放回 state
+                state.messages_mut().extend(own_messages);
                 return Ok(());
             }
             result = full_compact(&own_messages, model.as_ref(), &self.config, "") => {
@@ -195,6 +197,8 @@ impl CompactMiddleware {
                             message: e.to_string(),
                         });
                         self.fire_hooks(hooks::types::HookEvent::PostCompact, msg_count).await;
+                        // RESTORE: full_compact 失败，own_messages 丢弃前放回 state
+                        state.messages_mut().extend(own_messages);
                         return Ok(());
                     }
                 }
@@ -208,6 +212,8 @@ impl CompactMiddleware {
             });
             self.fire_hooks(hooks::types::HookEvent::PostCompact, msg_count)
                 .await;
+            // RESTORE: re_inject 前取消，own_messages 丢弃前放回 state
+            state.messages_mut().extend(own_messages);
             return Ok(());
         }
 
@@ -224,6 +230,8 @@ impl CompactMiddleware {
                     message: "已取消".to_string(),
                 });
                 self.fire_hooks(hooks::types::HookEvent::PostCompact, msg_count).await;
+                // RESTORE: re_inject 被取消，own_messages 丢弃前放回 state
+                state.messages_mut().extend(own_messages);
                 return Ok(());
             }
             result = re_inject(&own_messages, &self.config, &self.cwd) => result,
