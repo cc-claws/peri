@@ -57,8 +57,7 @@ pub struct ConfigPanel {
     pub buf_autocompact: bool,
     pub buf_threshold: String,
     pub cur_threshold: usize,
-    pub buf_language: String,
-    pub cur_language: usize,
+    pub buf_language: String, // "" = auto, "en", "zh-CN"
     pub buf_persona: String,
     pub cur_persona: usize,
     pub buf_tone: String,
@@ -87,7 +86,6 @@ impl ConfigPanel {
             buf_threshold: threshold,
             cur_threshold: 0,
             buf_language: cfg.config.language.clone().unwrap_or_default(),
-            cur_language: 0,
             buf_persona: cfg.config.persona.clone().unwrap_or_default(),
             cur_persona: 0,
             buf_tone: cfg.config.tone.clone().unwrap_or_default(),
@@ -116,27 +114,26 @@ impl ConfigPanel {
         };
     }
 
+    /// 可选语言列表："" (auto) → "en" → "zh-CN" → ""
+    const LANGUAGE_OPTIONS: &[&str] = &["", "en", "zh-CN"];
+
+    pub fn cycle_language(&mut self, reverse: bool) {
+        let current = self.buf_language.as_str();
+        let pos = Self::LANGUAGE_OPTIONS.iter().position(|&o| o == current).unwrap_or(0);
+        let next = if reverse {
+            if pos == 0 { Self::LANGUAGE_OPTIONS.len() - 1 } else { pos - 1 }
+        } else {
+            (pos + 1) % Self::LANGUAGE_OPTIONS.len()
+        };
+        self.buf_language = Self::LANGUAGE_OPTIONS[next].to_string();
+    }
+
     pub fn paste_text(&mut self, text: &str) {
         let text: String = text.chars().filter(|&c| c != '\n' && c != '\r').collect();
         match self.cursor {
             ROW_THRESHOLD => {
                 let buf = &mut self.buf_threshold;
                 let cursor = &mut self.cur_threshold;
-                let char_count = buf.chars().count();
-                if *cursor > char_count {
-                    *cursor = char_count;
-                }
-                let byte_pos = buf
-                    .char_indices()
-                    .nth(*cursor)
-                    .map(|(i, _)| i)
-                    .unwrap_or(buf.len());
-                buf.insert_str(byte_pos, &text);
-                *cursor += text.chars().count();
-            }
-            ROW_LANGUAGE => {
-                let buf = &mut self.buf_language;
-                let cursor = &mut self.cur_language;
                 let char_count = buf.chars().count();
                 if *cursor > char_count {
                     *cursor = char_count;
@@ -197,22 +194,12 @@ impl ConfigPanel {
         let threshold_val: u8 = self.buf_threshold.parse().unwrap_or(85).clamp(50, 99);
         compact.auto_compact_threshold = threshold_val as f64 / 100.0;
 
-        // language: validate against available langs
-        let lang_val = if self.buf_language.is_empty() || self.buf_language == "auto" {
+        // language: value is always valid (selected from LANGUAGE_OPTIONS)
+        cfg.config.language = if self.buf_language.is_empty() {
             None
         } else {
-            let lang_str = self.buf_language.trim().to_string();
-            if lc.available_langs().contains(&lang_str.as_str()) {
-                Some(lang_str)
-            } else {
-                return Err(format!(
-                    "Unsupported language: '{}'. Available: {}",
-                    self.buf_language,
-                    lc.available_langs().join(", ")
-                ));
-            }
+            Some(self.buf_language.clone())
         };
-        cfg.config.language = lang_val;
 
         // persona
         cfg.config.persona = if self.buf_persona.is_empty() {
@@ -244,18 +231,6 @@ impl ConfigPanel {
                 super::handle_edit_key(
                     &mut self.buf_threshold,
                     &mut self.cur_threshold,
-                    Input {
-                        key: tui_textarea::Key::Char(c),
-                        ctrl: false,
-                        alt: false,
-                        shift: false,
-                    },
-                );
-            }
-            ROW_LANGUAGE => {
-                super::handle_edit_key(
-                    &mut self.buf_language,
-                    &mut self.cur_language,
                     Input {
                         key: tui_textarea::Key::Char(c),
                         ctrl: false,
@@ -296,9 +271,6 @@ impl ConfigPanel {
         match self.cursor {
             ROW_THRESHOLD => {
                 super::handle_edit_key(&mut self.buf_threshold, &mut self.cur_threshold, input);
-            }
-            ROW_LANGUAGE => {
-                super::handle_edit_key(&mut self.buf_language, &mut self.cur_language, input);
             }
             ROW_PERSONA => {
                 super::handle_edit_key(&mut self.buf_persona, &mut self.cur_persona, input);
@@ -370,6 +342,7 @@ impl PanelComponent for ConfigPanel {
             } => {
                 match self.cursor {
                     ROW_AUTOCOMPACT => self.cycle_autocompact(),
+                    ROW_LANGUAGE => self.cycle_language(false),
                     ROW_PROACTIVENESS => self.cycle_proactiveness(),
                     _ => self.input_char(' '),
                 }
@@ -379,14 +352,25 @@ impl PanelComponent for ConfigPanel {
                 key: Key::Left,
                 ctrl: false,
                 ..
+            } => {
+                match self.cursor {
+                    ROW_AUTOCOMPACT => self.cycle_autocompact(),
+                    ROW_LANGUAGE => self.cycle_language(true),
+                    ROW_PROACTIVENESS => self.cycle_proactiveness(),
+                    _ => {
+                        self.handle_text_key(input);
+                    }
+                }
+                EventResult::Consumed
             }
-            | Input {
+            Input {
                 key: Key::Right,
                 ctrl: false,
                 ..
             } => {
                 match self.cursor {
                     ROW_AUTOCOMPACT => self.cycle_autocompact(),
+                    ROW_LANGUAGE => self.cycle_language(false),
                     ROW_PROACTIVENESS => self.cycle_proactiveness(),
                     _ => {
                         self.handle_text_key(input);

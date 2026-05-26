@@ -28,6 +28,15 @@ fn field_label_key(row: usize) -> &'static str {
     }
 }
 
+/// 语言代码 → 显示名（不需要 i18n，语言名本身就是自描述的）
+fn lang_display(code: &str) -> &str {
+    match code {
+        "en" => "English",
+        "zh-CN" => "简体中文",
+        _ => "auto",
+    }
+}
+
 /// /config 面板渲染（单一直接编辑模式）
 pub(crate) fn render_config_panel(f: &mut Frame, panel: &ConfigPanel, app: &mut App, area: Rect) {
     let lc = &app.services.lc;
@@ -102,6 +111,42 @@ pub(crate) fn render_config_panel(f: &mut Frame, panel: &ConfigPanel, app: &mut 
                     ),
                 ]));
             }
+            ROW_LANGUAGE => {
+                let is_active = panel.cursor == row;
+                let label_style = active_or_text(is_active);
+                let active_style = Style::default()
+                    .fg(theme::THINKING)
+                    .add_modifier(Modifier::BOLD);
+                let inactive_style = Style::default().fg(theme::MUTED);
+                let desc_style = Style::default().fg(theme::MUTED);
+
+                let options = ["auto", "en", "zh-CN"];
+                let mut value_spans: Vec<Span> = Vec::new();
+                for (i, code) in options.iter().enumerate() {
+                    let display = lang_display(code);
+                    let is_selected = *code == panel.buf_language
+                        || (code.is_empty() && panel.buf_language.is_empty());
+                    if is_selected {
+                        value_spans.push(Span::styled(format!("[{}]", display), active_style));
+                    } else {
+                        value_spans.push(Span::styled(display.to_string(), inactive_style));
+                    }
+                    if i < options.len() - 1 {
+                        value_spans.push(Span::styled("  ", Style::default()));
+                    }
+                }
+                value_spans.push(Span::styled(
+                    format!("  {}", lc.tr("config-desc-language")),
+                    desc_style,
+                ));
+
+                let mut line_spans = vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(format!("{:<14}", lc.tr(field_label_key(row))), label_style),
+                ];
+                line_spans.extend(value_spans);
+                lines.push(Line::from(line_spans));
+            }
             ROW_PROACTIVENESS => {
                 let is_active = panel.cursor == row;
                 let label_style = active_or_text(is_active);
@@ -135,11 +180,10 @@ pub(crate) fn render_config_panel(f: &mut Frame, panel: &ConfigPanel, app: &mut 
                 line_spans.extend(value_spans);
                 lines.push(Line::from(line_spans));
             }
-            ROW_THRESHOLD | ROW_LANGUAGE | ROW_PERSONA | ROW_TONE => {
+            ROW_THRESHOLD | ROW_PERSONA | ROW_TONE => {
                 let is_active = panel.cursor == row;
                 let desc_key = match row {
                     ROW_THRESHOLD => "config-desc-threshold",
-                    ROW_LANGUAGE => "config-desc-language",
                     ROW_PERSONA => "config-desc-persona",
                     ROW_TONE => "config-desc-tone",
                     _ => "",
@@ -147,7 +191,6 @@ pub(crate) fn render_config_panel(f: &mut Frame, panel: &ConfigPanel, app: &mut 
 
                 let (buf, cursor) = match row {
                     ROW_THRESHOLD => (&panel.buf_threshold, panel.cur_threshold),
-                    ROW_LANGUAGE => (&panel.buf_language, panel.cur_language),
                     ROW_PERSONA => (&panel.buf_persona, panel.cur_persona),
                     ROW_TONE => (&panel.buf_tone, panel.cur_tone),
                     _ => unreachable!(),

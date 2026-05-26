@@ -17,7 +17,6 @@ fn test_config_panel_from_config_defaults() {
 
 #[test]
 fn test_config_panel_cursor_navigation() {
-    // cursor_down 从第一个可编辑行遍历所有可编辑行，验证循环
     let mut panel = ConfigPanel::from_config(&PeriConfig::default());
     assert_eq!(panel.cursor, ROW_AUTOCOMPACT);
 
@@ -35,7 +34,6 @@ fn test_config_panel_cursor_navigation() {
     panel.cursor_down();
     assert_eq!(panel.cursor, ROW_AUTOCOMPACT);
 
-    // cursor_up 从 AUTOCOMPACT wrap 到 TONE
     panel.cursor_up();
     assert_eq!(panel.cursor, ROW_TONE);
     panel.cursor_up();
@@ -53,28 +51,22 @@ fn test_config_panel_cursor_navigation() {
 #[test]
 fn test_config_panel_cursor_skips_headers() {
     let mut panel = ConfigPanel::from_config(&PeriConfig::default());
-
-    // 设置 cursor 到 ROW_SEPARATOR（不可编辑），验证跳到下一个可编辑行
     panel.cursor = ROW_SEPARATOR;
     panel.cursor_down();
     assert_eq!(panel.cursor, ROW_PERSONA);
 
-    // cursor_up 从 SEPARATOR 跳到上一个可编辑行
     panel.cursor = ROW_SEPARATOR;
     panel.cursor_up();
     assert_eq!(panel.cursor, ROW_PROACTIVENESS);
 
-    // ROW_GENERAL_HEADER 不可编辑，cursor_down 应跳到 AUTOCOMPACT
     panel.cursor = ROW_GENERAL_HEADER;
     panel.cursor_down();
     assert_eq!(panel.cursor, ROW_AUTOCOMPACT);
 
-    // ROW_OVERRIDES_HEADER 不可编辑，cursor_down 应跳到 PERSONA
     panel.cursor = ROW_OVERRIDES_HEADER;
     panel.cursor_down();
     assert_eq!(panel.cursor, ROW_PERSONA);
 
-    // ROW_OVERRIDES_HEADER 不可编辑，cursor_up 应跳到 PROACTIVENESS
     panel.cursor = ROW_OVERRIDES_HEADER;
     panel.cursor_up();
     assert_eq!(panel.cursor, ROW_PROACTIVENESS);
@@ -88,6 +80,27 @@ fn test_config_panel_cycle_autocompact() {
     assert!(!panel.buf_autocompact);
     panel.cycle_autocompact();
     assert!(panel.buf_autocompact);
+}
+
+#[test]
+fn test_config_panel_cycle_language() {
+    let mut panel = ConfigPanel::from_config(&PeriConfig::default());
+    // "" → "en"
+    assert!(panel.buf_language.is_empty());
+    panel.cycle_language(false);
+    assert_eq!(panel.buf_language, "en");
+    // "en" → "zh-CN"
+    panel.cycle_language(false);
+    assert_eq!(panel.buf_language, "zh-CN");
+    // "zh-CN" → ""
+    panel.cycle_language(false);
+    assert!(panel.buf_language.is_empty());
+    // reverse: "" → "zh-CN"
+    panel.cycle_language(true);
+    assert_eq!(panel.buf_language, "zh-CN");
+    // reverse: "zh-CN" → "en"
+    panel.cycle_language(true);
+    assert_eq!(panel.buf_language, "en");
 }
 
 #[test]
@@ -141,53 +154,31 @@ fn test_config_panel_apply_edit_invalid_threshold_clamps() {
 }
 
 #[test]
-fn test_config_panel_apply_edit_language_validation_valid() {
-    let lc = make_lc();
-    // en 保存成功
-    let mut cfg = PeriConfig::default();
-    let mut panel = ConfigPanel::from_config(&cfg);
-    panel.buf_language = "en".to_string();
-    assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
-    assert_eq!(cfg.config.language.as_deref(), Some("en"));
-
-    // zh-CN 保存成功
-    let mut panel = ConfigPanel::from_config(&PeriConfig::default());
-    panel.buf_language = "zh-CN".to_string();
-    assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
-    assert_eq!(cfg.config.language.as_deref(), Some("zh-CN"));
-}
-
-#[test]
-fn test_config_panel_apply_edit_language_validation_empty() {
+fn test_config_panel_apply_edit_language_empty_is_none() {
     let lc = make_lc();
     let mut cfg = PeriConfig::default();
     let mut panel = ConfigPanel::from_config(&cfg);
     panel.buf_language = String::new();
     assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
     assert_eq!(cfg.config.language, None);
-
-    // "auto" 也等同于 None
-    let mut panel = ConfigPanel::from_config(&PeriConfig::default());
-    panel.buf_language = "auto".to_string();
-    assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
-    assert_eq!(cfg.config.language, None);
 }
 
 #[test]
-fn test_config_panel_apply_edit_language_validation_invalid() {
+fn test_config_panel_apply_edit_language_en() {
     let lc = make_lc();
     let mut cfg = PeriConfig::default();
     let mut panel = ConfigPanel::from_config(&cfg);
-    panel.buf_language = "fr".to_string();
-    let result = panel.apply_edit(&mut cfg, &lc);
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        err.contains("Unsupported language"),
-        "错误消息应包含 'Unsupported language': {}",
-        err
-    );
-    assert!(err.contains("fr"), "错误消息应包含无效语言: {}", err);
-    // 语言不应被修改
-    assert_eq!(cfg.config.language, None);
+    panel.buf_language = "en".to_string();
+    assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
+    assert_eq!(cfg.config.language.as_deref(), Some("en"));
+}
+
+#[test]
+fn test_config_panel_apply_edit_language_zh_cn() {
+    let lc = make_lc();
+    let mut cfg = PeriConfig::default();
+    let mut panel = ConfigPanel::from_config(&cfg);
+    panel.buf_language = "zh-CN".to_string();
+    assert!(panel.apply_edit(&mut cfg, &lc).is_ok());
+    assert_eq!(cfg.config.language.as_deref(), Some("zh-CN"));
 }
