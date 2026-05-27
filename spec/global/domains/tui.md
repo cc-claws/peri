@@ -839,6 +839,46 @@ submit_message(text)
 **涉及文件:** peri-tui/src/app/login_panel/component.rs, peri-tui/src/ui/main_ui/panels/login.rs, peri-tui/locales/en/main.ftl, peri-tui/locales/zh-CN/main.ftl
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-25-compact-resubmit-missing-loading-spinner
+**摘要:** Compact 后 Resubmit 缺少 Loading Spinner
+**状态:** Closed
+**归档日期:** 2026-05-27
+**关键词:** loading spinner, compact resubmit, agent lifecycle
+**问题本质:** compact 完成处理器调用 set_loading(false) 后，resubmit 阶段没有重新启用 spinner
+**通用模式:** 自动化 resubmit/retry 路径需要与正常 agent 执行路径一致的生命周期状态管理
+**涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/app/agent_ops/lifecycle.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-23-thinking-tail-single-line-layout-jitter
+**摘要:** 思考内容只显示最后一行导致自动换行布局抖动
+**状态:** Verify
+**归档日期:** 2026-05-27
+**关键词:** thinking display, layout jitter, tail_lines, single-line wrap
+**问题本质:** extract_tail_lines(text, 1) 只取最后 1 行，内容增长超出终端宽度时 ratatui 自动换行使渲染高度在 1↔2 行间跳变
+**通用模式:** 流式内容渲染需固定区域高度或使用足够大的 tail_lines 值避免单行换行导致的布局变化
+**涉及文件:** peri-tui/src/app/message_pipeline/reconcile.rs, peri-tui/src/ui/message_render.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-26-windows-paste-multiline-truncated
+**摘要:** Windows 输入框粘贴多行内容被截断为单行发送
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** Windows paste, bracketed paste, multiline input, cross-platform
+**问题本质:** Windows 终端不支持 bracketed paste 协议，粘贴的多行内容被终端模拟为 Enter key event 触发 submit
+**通用模式:** 跨平台输入处理必须考虑终端协议差异，`Event::Paste` 与 `Event::Key(Enter)` 是两条完全不同的处理路径
+**涉及文件:** peri-tui/src/event/mod.rs, peri-tui/src/event/keyboard.rs, peri-tui/src/main.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-27-message-area-scrollbar-thumb-misaligned
+**摘要:** 消息区域滚动条滑块位置与鼠标可拖拽位置不对齐
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** scrollbar alignment, thumb geometry, mouse drag, ratatui formula
+**问题本质:** 鼠标事件处理器使用简单线性公式，与 ratatui Scrollbar::part_lengths() 的 thumb 定位公式不一致
+**通用模式:** UI 组件的鼠标交互必须复刻组件库自己的坐标计算公式，不能使用简化的线性近似
+**涉及文件:** peri-tui/src/ui/main_ui/message_area.rs, peri-tui/src/event/mod.rs, peri-widgets/src/scrollable.rs
+**CLAUDE.md 链接:** false
+
 ---
 
 ## 相关 Feature

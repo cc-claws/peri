@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-message-area-scrollbar-thumb-misaligned.md
+
 # 消息区域滚动条滑块位置与鼠标可拖拽位置不对齐
 
 **状态**：Fixed

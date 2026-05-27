@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-26-background-agent-management-bar.md
+
 # 后台 SubAgent 统一管理栏
 
 **状态**：Fixed

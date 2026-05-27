@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-25-compact-resubmit-missing-loading-spinner.md
+
 # Compact 后 Resubmit 缺少 Loading Spinner
 
 **状态**：Closed

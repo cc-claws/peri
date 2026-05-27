@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-26-windows-paste-multiline-truncated.md
+
 # Windows 输入框粘贴多行内容被截断为单行发送
 
 **状态**：Fixed

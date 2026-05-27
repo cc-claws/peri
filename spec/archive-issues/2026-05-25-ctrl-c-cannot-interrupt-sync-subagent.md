@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-25-ctrl-c-cannot-interrupt-sync-subagent.md
+
 # Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断
 
 **状态**：Fixed

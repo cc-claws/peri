@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-23-thinking-tail-single-line-layout-jitter.md
+
 # 思考内容只显示最后一行导致自动换行布局抖动
 
 **状态**：Verify

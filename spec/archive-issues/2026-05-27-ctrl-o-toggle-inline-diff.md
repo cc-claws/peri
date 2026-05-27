@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-ctrl-o-toggle-inline-diff.md
+
 # Ctrl+O 开关 Write/Edit 工具的内联 diff 显示，默认关闭并提供 config 选项
 
 **状态**：Fixed

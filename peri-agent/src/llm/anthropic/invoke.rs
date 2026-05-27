@@ -311,10 +311,17 @@ pub(super) fn build_request_body(
 
     let (mut messages, system_from_msgs) = messages_to_anthropic(&request.messages);
 
-    // Extended Thinking 模式下，为缺少 thinking 的 assistant 消息注入 redacted_thinking 占位。
-    if adapter.extended_thinking {
-        cache::ensure_thinking_blocks(&mut messages);
-    }
+    // 确保所有 assistant 消息都包含 thinking block。
+    //
+    // DeepSeek 等 Anthropic 兼容端口在 thinking 模式下要求所有 assistant 消息
+    // 都包含 thinking block，即使客户端未显式启用 extended thinking。
+    // 中间件（如 SkillPreloadMiddleware、AtMentionMiddleware）注入的伪 assistant
+    // 消息不含 thinking block 会导致 400 错误
+    // ("The content[].thinking in the thinking mode must be passed back to the API")。
+    // 始终调用 ensure_thinking_blocks，它为缺少 thinking 的 assistant 消息补充
+    // 空占位 thinking block（thinking: "", signature: ""）——语义上等于"无思考"，
+    // 对真实 Anthropic API 也无害（未启用 extended thinking 时 API 会忽略）。
+    cache::ensure_thinking_blocks(&mut messages);
 
     // 合并 system blocks：消息列表中的 System（中间件注入）+ request.system
     let mut system_blocks = system_from_msgs;

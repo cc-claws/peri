@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-inline-diff-display-in-message-stream.md
+
 # 消息流中内嵌 Diff 视图显示
 
 **状态**：Fixed

@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-25-replace-jemalloc-with-mimalloc.md
+
 # 使用 mimalloc 替换 jemalloc 全局分配器
 
 **状态**：Closed（废弃了，现在无分配器）

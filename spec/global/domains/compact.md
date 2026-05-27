@@ -121,6 +121,17 @@
 **涉及文件:** peri-tui/src/app/agent_compact.rs, peri-tui/src/acp_server/compact.rs, peri-tui/src/app/agent_comm.rs, peri-tui/src/command/session/compact.rs
 **CLAUDE.md 链接:** false
 
+### issue_2026-05-23-micro-compact-repeated-triggering
+**摘要:** Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知
+**状态:** verify
+**归档日期:** 2026-05-27
+**关键词:** micro compact, repeated triggering, once-per-prompt guard, AtomicBool
+**问题本质:** CompactMiddleware 缺少 once-per-prompt 守卫。micro compact 压缩量 < 新增量，永远降不到 70% 阈值以下，每轮都重复触发
+**通用模式:** 有副作用的 per-prompt 操作（如 compact、通知）必须加 once-per-prompt 守卫。同一 execute_prompt 内只应触发一次 micro compact，之后由 full compact 接管
+**技术决策:** 用 `AtomicBool` 做守卫——每次 execute_prompt 创建新 CompactMiddleware 实例，标志天然 per-prompt 作用域
+**涉及文件:** peri-middlewares/src/compact_middleware.rs, peri-middlewares/src/compact_middleware_test.rs
+**CLAUDE.md 链接:** true
+
 ---
 
 ## 相关 Feature

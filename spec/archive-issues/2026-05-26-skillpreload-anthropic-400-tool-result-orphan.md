@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-26-skillpreload-anthropic-400-tool-result-orphan.md
+
 # SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use
 
 **状态**：Fixed

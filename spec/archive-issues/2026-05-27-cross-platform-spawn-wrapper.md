@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-cross-platform-spawn-wrapper.md
+
 # Windows 下 `Command::new()` 无法执行 .cmd 脚本（npx 等），���统一跨平台 spawn 封装
 
 **状态**：Fixed

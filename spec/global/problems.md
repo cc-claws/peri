@@ -1047,8 +1047,137 @@
 ### LcRegistry
 - [Login 面板硬编码中文字符串未走 i18n，切换英文后仍显示中文](domains/tui.md#issue_2026-05-26-login-panel-hardcoded-chinese-no-i18n) — tui
 
+
+### Anthropic 400
+- [SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use](domains/agent.md#issue_2026-05-26-skillpreload-anthropic-400-tool-result-orphan) — agent
+
+### AtomicBool
+- [Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知](domains/compact.md#issue_2026-05-23-micro-compact-repeated-triggering) — compact
+
+### Ctrl+C interrupt
+- [Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文](domains/agent.md#issue_2026-05-26-ctrl-c-interrupt-causes-agent-amnesia) — agent
+- [Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断](domains/agent.md#issue_2026-05-25-ctrl-c-cannot-interrupt-sync-subagent) — agent
+
+### LLM language drift
+- [系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文](domains/system-prompt.md#issue_2026-05-27-system-prompt-missing-language-instruction) — system-prompt
+
+### Language instruction
+- [系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文](domains/system-prompt.md#issue_2026-05-27-system-prompt-missing-language-instruction) — system-prompt
+
+### MCP transport
+- [Windows 下 Command::new() 无法执行 .cmd 脚本，需统一跨平台 spawn 封装](domains/mcp.md#issue_2026-05-27-cross-platform-spawn-wrapper) — mcp
+
+### SubAgent language drift
+- [语言段落注入导致 SubAgent 语言漂移和缓存隔离失效](domains/agent.md#issue_2026-05-27-language-injection-subagent-drift-cache-isolation) — agent
+
+### Windows cmd
+- [Windows 下 Command::new() 无法执行 .cmd 脚本，需统一跨平台 spawn 封装](domains/mcp.md#issue_2026-05-27-cross-platform-spawn-wrapper) — mcp
+
+### Windows paste
+- [Windows 输入框粘贴多行内容被截断为单行发送](domains/tui.md#issue_2026-05-26-windows-paste-multiline-truncated) — tui
+
+### add_message vs prepend_message
+- [SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use](domains/agent.md#issue_2026-05-26-skillpreload-anthropic-400-tool-result-orphan) — agent
+
+### agent amnesia
+- [Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文](domains/agent.md#issue_2026-05-26-ctrl-c-interrupt-causes-agent-amnesia) — agent
+
+### agent lifecycle
+- [Compact 后 Resubmit 缺少 Loading Spinner](domains/tui.md#issue_2026-05-25-compact-resubmit-missing-loading-spinner) — tui
+
+### bracketed paste
+- [Windows 输入框粘贴多行内容被截断为单行发送](domains/tui.md#issue_2026-05-26-windows-paste-multiline-truncated) — tui
+
+### cache isolation
+- [语言段落注入导致 SubAgent 语言漂移和缓存隔离失效](domains/agent.md#issue_2026-05-27-language-injection-subagent-drift-cache-isolation) — agent
+
+### cancel propagation
+- [Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断](domains/agent.md#issue_2026-05-25-ctrl-c-cannot-interrupt-sync-subagent) — agent
+
+### cancel token
+- [Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断](domains/agent.md#issue_2026-05-25-ctrl-c-cannot-interrupt-sync-subagent) — agent
+
+### cancelled state
+- [Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文](domains/agent.md#issue_2026-05-26-ctrl-c-interrupt-causes-agent-amnesia) — agent
+
+### compact resubmit
+- [Compact 后 Resubmit 缺少 Loading Spinner](domains/tui.md#issue_2026-05-25-compact-resubmit-missing-loading-spinner) — tui
+
+### cross-platform
+- [Windows 输入框粘贴多行内容被截断为单行发送](domains/tui.md#issue_2026-05-26-windows-paste-multiline-truncated) — tui
+
+### cross-platform spawn
+- [Windows 下 Command::new() 无法执行 .cmd 脚本，需统一跨平台 spawn 封装](domains/mcp.md#issue_2026-05-27-cross-platform-spawn-wrapper) — mcp
+
+### frozen_language
+- [语言段落注入导致 SubAgent 语言漂移和缓存隔离失效](domains/agent.md#issue_2026-05-27-language-injection-subagent-drift-cache-isolation) — agent
+- [系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文](domains/system-prompt.md#issue_2026-05-27-system-prompt-missing-language-instruction) — system-prompt
+
+### history truncation
+- [Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文](domains/agent.md#issue_2026-05-26-ctrl-c-interrupt-causes-agent-amnesia) — agent
+
+### hooks executor
+- [Windows 下 Command::new() 无法执行 .cmd 脚本，需统一跨平台 spawn 封装](domains/mcp.md#issue_2026-05-27-cross-platform-spawn-wrapper) — mcp
+
+### last_idx fallback
+- [语言段落注入导致 SubAgent 语言漂移和缓存隔离失效](domains/agent.md#issue_2026-05-27-language-injection-subagent-drift-cache-isolation) — agent
+
+### layout jitter
+- [思考内容只显示最后一行导致自动换行布局抖动](domains/tui.md#issue_2026-05-23-thinking-tail-single-line-layout-jitter) — tui
+
+### loading spinner
+- [Compact 后 Resubmit 缺少 Loading Spinner](domains/tui.md#issue_2026-05-25-compact-resubmit-missing-loading-spinner) — tui
+
+### micro compact
+- [Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知](domains/compact.md#issue_2026-05-23-micro-compact-repeated-triggering) — compact
+
+### mouse drag
+- [消息区域滚动条滑块位置与鼠标可拖拽位置不对齐](domains/tui.md#issue_2026-05-27-message-area-scrollbar-thumb-misaligned) — tui
+
+### multiline input
+- [Windows 输入框粘贴多行内容被截断为单行发送](domains/tui.md#issue_2026-05-26-windows-paste-multiline-truncated) — tui
+
+### once-per-prompt guard
+- [Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知](domains/compact.md#issue_2026-05-23-micro-compact-repeated-triggering) — compact
+
+### prepended_ids
+- [SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use](domains/agent.md#issue_2026-05-26-skillpreload-anthropic-400-tool-result-orphan) — agent
+
+### ratatui formula
+- [消息区域滚动条滑块位置与鼠标可拖拽位置不对齐](domains/tui.md#issue_2026-05-27-message-area-scrollbar-thumb-misaligned) — tui
+
+### repeated triggering
+- [Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知](domains/compact.md#issue_2026-05-23-micro-compact-repeated-triggering) — compact
+
+### scrollbar alignment
+- [消息区域滚动条滑块位置与鼠标可拖拽位置不对齐](domains/tui.md#issue_2026-05-27-message-area-scrollbar-thumb-misaligned) — tui
+
+### shell_command
+- [Windows 下 Command::new() 无法执行 .cmd 脚本，需统一跨平台 spawn 封装](domains/mcp.md#issue_2026-05-27-cross-platform-spawn-wrapper) — mcp
+
+### single-line wrap
+- [思考内容只显示最后一行导致自动换行布局抖动](domains/tui.md#issue_2026-05-23-thinking-tail-single-line-layout-jitter) — tui
+
+### sync SubAgent
+- [Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断](domains/agent.md#issue_2026-05-25-ctrl-c-cannot-interrupt-sync-subagent) — agent
+
+### system prompt
+- [系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文](domains/system-prompt.md#issue_2026-05-27-system-prompt-missing-language-instruction) — system-prompt
+
+### tail_lines
+- [思考内容只显示最后一行导致自动换行布局抖动](domains/tui.md#issue_2026-05-23-thinking-tail-single-line-layout-jitter) — tui
+
+### thinking display
+- [思考内容只显示最后一行导致自动换行布局抖动](domains/tui.md#issue_2026-05-23-thinking-tail-single-line-layout-jitter) — tui
+
+### thumb geometry
+- [消息区域滚动条滑块位置与鼠标可拖拽位置不对齐](domains/tui.md#issue_2026-05-27-message-area-scrollbar-thumb-misaligned) — tui
+
+### tool_result orphan
+- [SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use](domains/agent.md#issue_2026-05-26-skillpreload-anthropic-400-tool-result-orphan) — agent
 ## 更新记录
 
+- 2026-05-27: 归档 16 个 issue（agent 4 + system-prompt 2 + compact 1 + tui 4 + mcp 1），新增 42 个关键词索引
 - 2026-05-26: 归档 6 个 issue（agent 3 + compact 1 + code-architecture 1 + tui 1），新增 22 个关键词索引
 - 2026-05-25: 归档 4 个 issue，新增关键词索引
 - 2026-05-13: 首次创建，归档 22 个 issue，提取 14 条领域认知

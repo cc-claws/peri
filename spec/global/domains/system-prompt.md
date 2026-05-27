@@ -121,6 +121,27 @@ build_system_prompt(overrides, cwd, features)
 **涉及文件:** peri-middlewares/src/tool_search/tool_index.rs:284, peri-middlewares/src/tool_search/middleware.rs:79, peri-agent/src/llm/anthropic/invoke.rs:202-222, peri-agent/src/llm/anthropic/invoke.rs:331-334
 **CLAUDE.md 链接:** true
 
+### issue_2026-05-27-system-prompt-missing-language-instruction
+**摘要:** 系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** Language instruction, system prompt, LLM language drift, frozen_language
+**问题本质:** 系统提示词中无任何语言偏好指令，LLM 在多轮对话后逐渐从中文漂移到英文。UI i18n 系统已存在但未传递给 LLM
+**通用模式:** 语言偏好与 cwd/date 同属「在 session/new 时冻结、注入系统提示词动态区域」的数据。任何影响 LLM 行为的用户偏好都应进入系统提示词
+**技术决策:** Language 段落放入 `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` 之后（动态区域），参考 Claude Code 的 `# Language` 格式
+**涉及文件:** peri-acp/src/prompt/mod.rs, peri-acp/src/provider/config.rs, peri-acp/src/session/executor.rs, peri-tui/src/acp_server/prompt.rs
+**CLAUDE.md 链接:** false
+
+### issue_2026-05-27-language-injection-subagent-drift-cache-isolation
+**摘要:** 语言段落注入导致 SubAgent 语言漂移和缓存隔离失效
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** SubAgent language drift, frozen_language, cache isolation, last_idx fallback
+**问题本质:** (1) SubAgent 从 peri_config.config.language 实时读取语言而非 frozen_language；(2) `i == last_idx` fallback 给动态 block 错误添加 cache_control；(3) session/load/resume/fork 丢失 frozen_language
+**通用模式:** session/new 时冻结的所有配置必须通过 AcpAgentConfig 链传递到 SubAgent 构建路径。冻结值和实时配置是两条独立的数据通道，不能混用
+**涉及文件:** peri-agent/src/llm/anthropic/invoke.rs, peri-acp/src/agent/builder.rs, peri-acp/src/session/executor.rs, peri-tui/src/acp_server/requests.rs
+**CLAUDE.md 链接:** true
+
 ---
 
 ## 相关 Feature

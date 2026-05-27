@@ -21,6 +21,7 @@ description: >
 | `Fixed`（含 `Fixed + Verify`、`Fixed（待用户验证）`） | 是 | 已修复 |
 | `Closed` | 是 | 已关闭 |
 | `Done` | 是 | 已完成 |
+| `Verify`（含 `verify`） | 是 | 待验证，修复已完成仅需用户确认 |
 | `Open`、`Open (搁置)` | 否 | 仍需处理 |
 | `Partial`、`Reopen` | 否 | 未完全解决 |
 
@@ -167,10 +168,11 @@ description: >
 
 对每个领域：
 1. Read 对应的 domain 文件（spec/global/domains/<domain>.md）
-2. 在文件末尾的「Issue 经验附录」段追加该领域的所有 issue 提炼
-3. 如果 domain 文件不存在「Issue 经验附录」段，在「相关 Feature」之前插入该段标题
-4. 如果某个 issue 标注"无可提炼认知"，跳过
-5. 更新文件末尾的「相关 Feature」引用，如有需要
+2. **先 Grep 检查是否已存在 `### issue_<filename>` 标题**，存在则跳过（去重）
+3. 在文件末尾的「Issue 经验附录」段追加该领域的所有 issue 提炼（仅追加不存在的）
+4. 如果 domain 文件不存在「Issue 经验附录」段，在「相关 Feature」之前插入该段标题
+5. 如果某个 issue 标注"无可提炼认知"，跳过
+6. 更新文件末尾的「相关 Feature」引用，如有需要
 
 格式要求：
 - 每个 issue 使用三级标题 ### issue_<filename>
@@ -207,6 +209,7 @@ description: >
 1. 提取「关键词」字段（逗号分隔）
 2. 对每个关键词：
    - 在「关键词索引」段查找或创建该关键词的三级标题
+   - **先 Grep 检查是否已存在对该 issue 的引用（`issue_<filename>`）**，存在则跳过
    - 追加条目：`- [<摘要>](domains/<domain>.md#issue_<filename>) — <domain>`
 3. 在「更新记录」段追加本次归档记录
 ```
@@ -238,9 +241,10 @@ description: >
 
 对每个「CLAUDE.md 链接: true」的 issue：
 1. Read 当前 CLAUDE.md
-2. 在「开发注意事项」段查找相关的 TRAP 或注意事项
-3. 在对应条目末尾追加内联链接：`（详见 spec/global/domains/<domain>.md#issue_<filename>）`
-4. 如果找不到相关条目，在「开发注意事项」段末尾追加新条目
+2. **先 Grep 检查 CLAUDE.md 是否已包含 `#issue_<filename>` 链接**，存在则跳过
+3. 在「开发注意事项」段查找相关的 TRAP 或注意事项
+4. 在对应条目末尾追加内联链接：`（详见 spec/global/domains/<domain>.md#issue_<filename>）`
+5. 如果找不到相关条目，在「开发注意事项」段末尾追加新条目
 ```
 
 **格式示例**：

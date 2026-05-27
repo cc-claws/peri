@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-language-injection-subagent-drift-cache-isolation.md
+
 # 语言段落注入导致 SubAgent 语言漂移和缓存隔离失效
 
 **状态**：Fixed

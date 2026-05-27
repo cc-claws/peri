@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-20-tui-hangs-after-tool-call-failure.md
+
 # 工具调用失败后 TUI 卡住（spinner 持续旋转）
 
 **状态**：Verify

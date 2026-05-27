@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-23-micro-compact-repeated-triggering.md
+
 # Micro Compact 重复触发，每轮工具调用后都显示"自动清理"通知
 
 **状态**：verify

@@ -603,6 +603,49 @@ launch_agent 工具调用
 
 ---
 
+### issue_2026-05-26-skillpreload-anthropic-400-tool-result-orphan
+**摘要:** SkillPreload 触发 Anthropic 400 Bad Request：tool_result 缺少配对 tool_use
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** prepended_ids, add_message vs prepend_message, Anthropic 400, tool_result orphan
+**问题本质:** `prepended_ids` 用 `len_after - len_before` 计算 prepend 数量，把 `add_message`（尾部追加）也计入，导致 cleanup 误删头部原始配对消息，产生孤儿 tool_result
+**通用模式:** 中间件消息注入有两种语义：`prepend_message`（头部插入 System，需 cleanup）和 `add_message`（尾部追加 Ai/Tool，是正式历史）。cleanup 逻辑必须只追踪 prepend 路径，用 `take_while(|m| m.is_system())` 而非计数差
+**涉及文件:** peri-agent/src/agent/executor/mod.rs, peri-middlewares/src/subagent/skill_preload.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-26-ctrl-c-interrupt-causes-agent-amnesia
+**摘要:** Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** Ctrl+C interrupt, agent amnesia, history truncation, cancelled state
+**问题本质:** ACP server 在 result.ok==false 时无条件 truncate history，丢弃了 agent 已写入 state 的当前轮次消息。TUI 显示正常但 agent 无上下文
+**通用模式:** 取消操作应保留部分进展——检查 agent 在取消前是否有有效产出，有则保留而非全部回滚。deferred write 模式保证 cancel 后 state 合法性
+**涉及文件:** peri-tui/src/acp_server/prompt.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-25-ctrl-c-cannot-interrupt-sync-subagent
+**摘要:** Ctrl+C 无法中断同步 SubAgent，需等待其自然结束后父 Agent 才被中断
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** Ctrl+C interrupt, sync SubAgent, cancel propagation, cancel token
+**问题本质:** 父 Agent 的 cancel token 未传播到同步 SubAgent 的执行上下文，SubAgent 独立运行直到完成
+**通用模式:** 所有 agent 执行路径（同步/异步/fork）必须共享同一个 cancel token 树，取消信号必须沿调用链传播
+**涉及文件:** peri-middlewares/src/subagent/tool/define.rs
+**CLAUDE.md 链接:** true
+
+### issue_2026-05-27-language-injection-subagent-drift-cache-isolation
+**摘要:** 语言段落注入导致 SubAgent 语言漂移和缓存隔离失效
+**状态:** Fixed
+**归档日期:** 2026-05-27
+**关键词:** SubAgent language drift, frozen_language, cache isolation, last_idx fallback
+**问题本质:** (1) SubAgent 从 peri_config.config.language 实时读取语言（非 frozen），/lang 切换后 SubAgent 语言变化而 Main Agent 不变；(2) Anthropic path 的 `i == last_idx` fallback 给动态 block 错误添加 cache_control；(3) session/load/resume/fork 丢失 frozen_language
+**通用模式:** session/new 时冻结的所有数据必须通过 AcpAgentConfig 传递到 SubAgent 构建路径；缓存标记必须严格限定在静态前缀 block，不能有 fallback 到动态 block
+**架构影响:** frozen data 传播链需显式设计：Main Agent builder → AcpAgentConfig → SubAgent builder，每新增一个 frozen 字段必须检查全链路
+**涉及文件:** peri-agent/src/llm/anthropic/invoke.rs, peri-acp/src/agent/builder.rs, peri-acp/src/session/executor.rs, peri-tui/src/acp_server/requests.rs
+**CLAUDE.md 链接:** true
+
+---
+
 ## 相关 Feature
 
 - → [relay-server.md#feature_20260326_F009_relay-message-id-propagation](./relay-server.md) — message_id 透传到 Web 前端

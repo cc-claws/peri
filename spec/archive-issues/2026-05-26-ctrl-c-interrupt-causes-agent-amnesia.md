@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-26-ctrl-c-interrupt-causes-agent-amnesia.md
+
 # Ctrl+C 中断后继续对话时 agent 丢失当前轮次上下文
 
 **状态**：Fixed

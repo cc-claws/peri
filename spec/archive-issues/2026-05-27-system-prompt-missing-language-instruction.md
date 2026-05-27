@@ -1,3 +1,5 @@
+> 归档于 2026-05-27，原路径 spec/issues/2026-05-27-system-prompt-missing-language-instruction.md
+
 # 系统提示词缺少语言指示段落，AI 多轮对话后漂移至英文
 
 **状态**：Fixed
