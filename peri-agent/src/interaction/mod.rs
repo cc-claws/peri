@@ -98,6 +98,19 @@ pub trait UserInteractionBroker: Send + Sync {
     async fn request(&self, ctx: InteractionContext) -> InteractionResponse;
 }
 
+// ─── ChannelNotificationSender ─────────────────────────────────────────────────
+
+/// 发送 channel 通知的抽象（由 McpClientPool 在 peri-middlewares 中实现）
+#[async_trait]
+pub trait ChannelNotificationSender: Send + Sync {
+    async fn send_notification(
+        &self,
+        server_name: &str,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<(), String>;
+}
+
 pub mod channel_types;
 pub use channel_types::{
     short_request_id, ChannelNotification, PermissionRequest, PermissionResponse,
@@ -105,3 +118,9 @@ pub use channel_types::{
 
 pub mod channel_state;
 pub use channel_state::ChannelState;
+
+pub mod channel_broker;
+pub mod multiplex;
+
+pub use channel_broker::ChannelBroker;
+pub use multiplex::MultiplexBroker;

@@ -237,6 +237,7 @@ impl App {
         let permission_mode = peri_middlewares::prelude::SharedPermissionMode::new(
             peri_middlewares::prelude::PermissionMode::Bypass,
         );
+        let channel_state = peri_agent::interaction::ChannelState::new();
         let services = ServiceRegistry {
             peri_config: peri_config.clone(),
             cwd: cwd.clone(),
@@ -258,6 +259,7 @@ impl App {
             lc,
             acp_peri_config: None,
             acp_provider: None,
+            channel_state: Some(channel_state.clone()),
         };
 
         Self {

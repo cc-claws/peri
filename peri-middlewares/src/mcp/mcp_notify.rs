@@ -30,3 +30,16 @@ impl McpClientPool {
             .map_err(|e| format!("send notification failed: {e}"))
     }
 }
+
+#[async_trait::async_trait]
+impl peri_agent::interaction::ChannelNotificationSender for McpClientPool {
+    async fn send_notification(
+        &self,
+        server_name: &str,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<(), String> {
+        self.send_custom_notification(server_name, method, params)
+            .await
+    }
+}

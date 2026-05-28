@@ -197,7 +197,55 @@ impl App {
             return true;
         }
 
+        // Poll channel notifications
+        self.poll_channel_notifications();
+
         updated
+    }
+
+    /// 每帧调用：消费 channel 消息通知，agent 空闲时直接提交，
+    /// agent 运行中时缓冲到 pending_messages。
+    fn poll_channel_notifications(&mut self) {
+        const MAX_PENDING: usize = 10;
+
+        // Drain notifications from channel receiver first (no self borrow across submit)
+        let mut channel_notifications = Vec::new();
+        {
+            let session = &mut self.session_mgr.sessions[self.session_mgr.active];
+            if let Some(ref mut rx) = session.messages.channel_notification_rx {
+                while let Ok(notif) = rx.try_recv() {
+                    channel_notifications.push(notif);
+                }
+            }
+        }
+
+        for notif in channel_notifications {
+            let xml = format!(
+                r#"<channel source="{}" chat_id="{}">{}</channel>"#,
+                notif.source, notif.chat_id, notif.text
+            );
+
+            let loading = self.session_mgr.sessions[self.session_mgr.active]
+                .ui
+                .loading;
+            if !loading {
+                // Agent is idle: submit immediately
+                self.submit_message(xml);
+            } else {
+                let pending_messages = &mut self.session_mgr.sessions[self.session_mgr.active]
+                    .messages
+                    .pending_messages;
+                if pending_messages.len() < MAX_PENDING {
+                    tracing::debug!(source = %notif.source, "channel 消息排队（agent 运行中）");
+                    pending_messages.push(xml);
+                } else {
+                    tracing::warn!(
+                        "pending_messages 已达上限 {}，丢弃 channel 消息",
+                        MAX_PENDING
+                    );
+                }
+            }
+        }
     }
 
     /// 每帧调用：消费后台事件通道（MCP OAuth 等异步任务发送的事件），返回是否有 UI 更新
