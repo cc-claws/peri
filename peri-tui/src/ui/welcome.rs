@@ -1,3 +1,4 @@
+#![rustfmt::skip]
 //! Welcome Card — 空消息时显示品牌 Logo + 功能提示
 
 use ratatui::{
