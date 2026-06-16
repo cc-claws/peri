@@ -40,27 +40,46 @@ pub fn parse_placeholders(text: &str) -> Vec<usize> {
 
 /// 检查字符串是否以 `[Image #N]` 开头，是则返回 N，否则返回 None。
 fn parse_placeholder_at_start(s: &str) -> Option<usize> {
+    parse_placeholder_with_len(s).map(|(id, _)| id)
+}
+
+/// 验证字符串恰好是一个 `[Image #N]` 占位符（不多不少）。
+/// 是则返回 `(image_id, 占位符字符长度)`，否则 None。
+pub fn parse_single_placeholder(s: &str) -> Option<(usize, usize)> {
+    let (id, consumed) = parse_placeholder_with_len(s)?;
+    if consumed == s.chars().count() {
+        Some((id, consumed))
+    } else {
+        None
+    }
+}
+
+/// 与 `parse_placeholder_at_start` 同语义，但额外返回占位符字符长度。
+fn parse_placeholder_with_len(s: &str) -> Option<(usize, usize)> {
     let prefix = "[Image #";
-    let s_bytes = s.as_bytes();
-    let prefix_bytes = prefix.as_bytes();
+    let s_chars: Vec<char> = s.chars().collect();
+    let prefix_chars: Vec<char> = prefix.chars().collect();
 
-    if s_bytes.len() < prefix_bytes.len() + 2 {
-        // 至少要 "[Image #N]"：prefix(8) + 1 位数字 + ']' = 10 字节
+    if s_chars.len() < prefix_chars.len() + 2 {
         return None;
     }
-    if &s_bytes[..prefix_bytes.len()] != prefix_bytes {
+    if s_chars[..prefix_chars.len()] != prefix_chars[..] {
         return None;
     }
 
-    let after_prefix = &s[prefix_bytes.len()..];
-    let close_bracket = after_prefix.find(']')?;
-    let digits = &after_prefix[..close_bracket];
-
-    // 必须全是 ASCII 数字，且不以 0 开头（除非就是 0，但 image_id 从 1 起）
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    let mut digits_len = 0usize;
+    let mut image_id = 0usize;
+    let mut i = prefix_chars.len();
+    while i < s_chars.len() && s_chars[i].is_ascii_digit() {
+        image_id = image_id * 10 + (s_chars[i] as usize - '0' as usize);
+        digits_len += 1;
+        i += 1;
+    }
+    if digits_len == 0 || i >= s_chars.len() || s_chars[i] != ']' {
         return None;
     }
-    digits.parse::<usize>().ok()
+
+    Some((image_id, i + 1))
 }
 
 /// 返回 UTF-8 字符的首字节所对应的字符长度（字节为单位）。
@@ -169,5 +188,20 @@ mod tests {
         let atts = vec![10];
         let result = filter_by_placeholders("[Image #99]", &atts, |x| *x);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_single_完整匹配() {
+        assert_eq!(parse_single_placeholder("[Image #1]"), Some((1, 10)));
+        assert_eq!(parse_single_placeholder("[Image #42]"), Some((42, 11)));
+    }
+
+    #[test]
+    fn parse_single_部分残留_不匹配() {
+        assert_eq!(parse_single_placeholder("[Image"), None);
+        assert_eq!(parse_single_placeholder("Image #1]"), None);
+        assert_eq!(parse_single_placeholder("[Image #1"), None);
+        assert_eq!(parse_single_placeholder("[Image #1] extra"), None);
+        assert_eq!(parse_single_placeholder("[Image #]"), None);
     }
 }

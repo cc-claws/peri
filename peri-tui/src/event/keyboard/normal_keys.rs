@@ -379,7 +379,16 @@ pub(super) fn handle_normal_keys(app: &mut App, input: Input) -> anyhow::Result<
             if app.session_mgr.current_mut().ui.history_index.is_some() {
                 app.exit_history();
             }
-            app.session_mgr.current_mut().ui.textarea.input(input);
+
+            // 拦截 Backspace：若光标前是 [Image #N] 占位符，整体删除并联动附件。
+            // 占位符作为 textarea 内原子元素，Backspace 不应只删一个字符破坏占位符。
+            let intercepted = matches!(input.key, Key::Backspace)
+                && !app.session_mgr.current_mut().ui.loading
+                && try_delete_image_placeholder_backspace(app);
+
+            if !intercepted {
+                app.session_mgr.current_mut().ui.textarea.input(input);
+            }
             app.session_mgr.current_mut().ui.reset_cursor_blink();
             // When input changes: reset cursor (don't pre-select; wait for user to press Tab/Up/Down)
             if !app.session_mgr.current_mut().ui.loading {
@@ -498,8 +507,61 @@ fn handle_down(app: &mut App) {
     }
 }
 
-fn handle_ctrl_v(app: &mut App) {
-    // 优先尝试图片粘贴（file_list / get_image / WSL PowerShell fallback），
+/// 若光标正前方（向左方向）是一个完整的 `[Image #N]` 占位符，整体删除占位符 +
+/// 从 `pending_attachments` 中移除对应附件，返回 `true`；否则返回 `false` 不拦截。
+fn try_delete_image_placeholder_backspace(app: &mut App) -> bool {
+    use crate::clipboard::image_placeholder::parse_single_placeholder;
+
+    let (row, col) = app.session_mgr.current().ui.textarea.cursor();
+    let lines = app.session_mgr.current().ui.textarea.lines();
+    let Some(line) = lines.get(row) else {
+        return false;
+    };
+
+    // 取光标前的字符序列（按字符，非字节）
+    let prefix_chars: Vec<char> = line.chars().take(col).collect();
+    if prefix_chars.is_empty() {
+        return false;
+    }
+
+    // 末尾必须是 ']'
+    if prefix_chars.last() != Some(&']') {
+        return false;
+    }
+
+    // 从 ']' 向前查找最近的 '['，把候选段切出来验证
+    let close_idx = prefix_chars.len() - 1;
+    let Some(open_idx) = prefix_chars[..close_idx].iter().rposition(|c| *c == '[') else {
+        return false;
+    };
+
+    let candidate: String = prefix_chars[open_idx..=close_idx].iter().collect();
+    let Some((image_id, placeholder_len)) = parse_single_placeholder(&candidate) else {
+        return false;
+    };
+
+    // 整体删除：先把光标移到占位符开头，再删 placeholder_len 个字符
+    let metadata = &mut app.session_mgr.current_mut().metadata;
+    let before_len = metadata.pending_attachments.len();
+    metadata.pending_attachments.retain(|a| a.image_id != image_id);
+    let attachment_removed = metadata.pending_attachments.len() < before_len;
+
+    let textarea = &mut app.session_mgr.current_mut().ui.textarea;
+    textarea.move_cursor(CursorMove::Jump(
+        row.try_into().unwrap_or(u16::MAX),
+        open_idx.try_into().unwrap_or(u16::MAX),
+    ));
+    let deleted = textarea.delete_str(placeholder_len);
+
+    if !attachment_removed && !deleted {
+        tracing::debug!(
+            "Backspace 拦截占位符 image_id={image_id} 但未找到对应附件/未删除文本"
+        );
+    }
+    true
+}
+
+fn handle_ctrl_v(app: &mut App) {    // 优先尝试图片粘贴（file_list / get_image / WSL PowerShell fallback），
     // 失败时再退回文本粘贴。
     match crate::clipboard::paste::paste_image_as_png_base64() {
         Ok((b64, sz, _w, _h)) => {
