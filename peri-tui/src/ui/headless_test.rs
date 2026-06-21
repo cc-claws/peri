@@ -3269,3 +3269,658 @@ async fn test_background_agents_lifecycle() {
         "聚焦的 agent 完成后应自动退出聚焦"
     );
 }
+
+// ── 主消息区滚动条（Phase 1）──────────────────────────────────────────────
+
+/// 短对话（内容不超屏）时不应渲染滚动条 thumb。
+///
+/// Phase 1 接入：max_scroll <= min_scroll 时跳过 Scrollbar 渲染。
+/// 参考 `peri-tui/src/ui/main_ui/message_area.rs` 末尾的 Scrollbar 渲染分支。
+#[tokio::test]
+async fn test_main_scrollbar_invisible_when_content_fits() {
+    let (mut app, mut handle) = App::new_headless(120, 30).await;
+
+    // 单条短消息，不可能超出 30 行视口
+    let notified = handle.render_notify.notified();
+    let vm = MessageViewModel::user("short message".into());
+    app.session_mgr
+        .current_mut()
+        .messages
+        .view_messages
+        .push(vm);
+    app.render_rebuild();
+    notified.await;
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let snap = handle.snapshot();
+    let snap_text = snap.join("\n");
+    // thumb 是 █ (FULL BLOCK)；短对话时不应出现
+    assert!(
+        !snap_text.contains('\u{2588}'),
+        "短对话不应渲染滚动条 thumb (█)，实际:\n{}",
+        snap_text
+    );
+}
+
+/// 长对话（内容超屏）时应渲染滚动条 thumb。
+#[tokio::test]
+async fn test_main_scrollbar_visible_when_content_overflows() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+
+    // 填充足够多的消息触发滚动（与 test_sticky_header_shows_after_submit 同样的模式）
+    for i in 0..30 {
+        let notified = handle.render_notify.notified();
+        let vm = MessageViewModel::user(format!("message line padding content {}", i));
+        app.session_mgr
+            .current_mut()
+            .messages
+            .view_messages
+            .push(vm);
+        app.render_rebuild();
+        notified.await;
+    }
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let snap = handle.snapshot();
+    let snap_text = snap.join("\n");
+    // 长对话应渲染 thumb（█）
+    assert!(
+        snap_text.contains('\u{2588}'),
+        "长对话应渲染滚动条 thumb (█)，实际:\n{}",
+        snap_text
+    );
+
+    // 同时验证 scroll_offset 字段已正确设置（max_scroll > min_scroll）
+    let max_scroll = app.session_mgr.current().ui.scrollbar_max_offset;
+    let min_scroll = app.session_mgr.current().ui.scrollbar_min_offset;
+    assert!(
+        max_scroll > min_scroll,
+        "应有滚动范围，max_scroll={} min_scroll={}",
+        max_scroll,
+        min_scroll
+    );
+}
+
+// ── 主消息区滚动条（Phase 1 多角度测试）────────────────────────────────────
+
+/// 辅助：找出 buffer 中所有 thumb (█) 的坐标 (x, y)
+fn find_thumb_cells(handle: &crate::ui::headless::HeadlessHandle) -> Vec<(u16, u16)> {
+    let buffer = handle.terminal.backend().buffer();
+    let width = buffer.area.width;
+    let mut positions = Vec::new();
+    for (i, cell) in buffer.content.iter().enumerate() {
+        if cell.symbol() == "\u{2588}" {
+            let x = (i % width as usize) as u16;
+            let y = (i / width as usize) as u16;
+            positions.push((x, y));
+        }
+    }
+    positions
+}
+
+/// 辅助：找出 buffer 中所有 thumb (█) 的坐标 + 颜色
+fn find_thumb_cell_colors(
+    handle: &crate::ui::headless::HeadlessHandle,
+) -> Vec<(u16, u16, Option<ratatui::style::Color>)> {
+    use ratatui::style::Color;
+    let buffer = handle.terminal.backend().buffer();
+    let width = buffer.area.width;
+    let mut positions = Vec::new();
+    for i in 0..buffer.content.len() {
+        let cell = &buffer.content[i];
+        if cell.symbol() == "\u{2588}" {
+            let x = (i % width as usize) as u16;
+            let y = (i / width as usize) as u16;
+            // cell.fg 直接存储（ratatui 不嵌套在 style 内）
+            let fg = match cell.fg {
+                Color::Reset => None,
+                other => Some(other),
+            };
+            positions.push((x, y, fg));
+        }
+    }
+    positions
+}
+
+/// 辅助：构造多行消息并触发渲染
+async fn push_messages_and_render(
+    app: &mut App,
+    handle: &crate::ui::headless::HeadlessHandle,
+    count: usize,
+    line_prefix: &str,
+) {
+    for i in 0..count {
+        let notified = handle.render_notify.notified();
+        let vm = MessageViewModel::user(format!("{} line {}", line_prefix, i));
+        app.session_mgr
+            .current_mut()
+            .messages
+            .view_messages
+            .push(vm);
+        app.render_rebuild();
+        notified.await;
+    }
+}
+
+/// thumb 必须出现在消息区的最右列（content_area 减宽 + thumb 在 inner.right-1）
+#[tokio::test]
+async fn test_scrollbar_thumb_at_rightmost_column() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let thumbs = find_thumb_cells(&handle);
+    assert!(!thumbs.is_empty(), "应有 thumb 渲染");
+
+    // 消息区 messages_area 存在 UiState 中，最右列应为 messages_area.right() - 1
+    let area = app
+        .session_mgr
+        .current()
+        .ui
+        .messages_area
+        .expect("messages_area should be set after render");
+    let expected_x = area.right().saturating_sub(1);
+    for (x, y) in &thumbs {
+        assert_eq!(
+            *x, expected_x,
+            "thumb 应在最右列 (x={}), 实际 x={} y={}",
+            expected_x, x, y
+        );
+    }
+}
+
+/// 默认 scroll_follow=true 时 thumb 应位于底部附近（贴底）
+#[tokio::test]
+async fn test_scrollbar_thumb_at_bottom_when_follow_default() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    assert!(
+        app.session_mgr.current().ui.scroll_follow,
+        "默认应 scroll_follow=true"
+    );
+
+    let area = app
+        .session_mgr
+        .current()
+        .ui
+        .messages_area
+        .expect("messages_area should be set");
+    let thumbs = find_thumb_cells(&handle);
+    assert!(!thumbs.is_empty());
+    let max_thumb_y = thumbs.iter().map(|(_, y)| *y).max().unwrap();
+    // thumb 应贴底（最底 thumb Y 接近 area.bottom() - 1）
+    let bottom = area.bottom().saturating_sub(1);
+    assert!(
+        max_thumb_y >= bottom.saturating_sub(2),
+        "follow 时 thumb 应贴底，最大 y={} area bottom={}",
+        max_thumb_y,
+        bottom
+    );
+}
+
+/// 用户向上滚动后 thumb Y 位置应上移
+#[tokio::test]
+async fn test_scrollbar_thumb_moves_up_when_user_scrolls_up() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 初始绘制（follow-bottom）
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_before = find_thumb_cells(&handle);
+    let max_y_before = thumbs_before.iter().map(|(_, y)| *y).max().unwrap();
+
+    // 模拟用户向上滚动：scroll_follow=false + scroll_offset 设小值
+    let max_scroll = app.session_mgr.current().ui.scrollbar_max_offset;
+    let min_scroll = app.session_mgr.current().ui.scrollbar_min_offset;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    app.session_mgr.current_mut().ui.scroll_offset = min_scroll; // 滚到顶
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_after = find_thumb_cells(&handle);
+    let max_y_after = thumbs_after.iter().map(|(_, y)| *y).max().unwrap();
+
+    // 向上滚后 thumb 应整体上移（max Y 变小）
+    assert!(
+        max_y_after < max_y_before,
+        "向上滚后 thumb 应上移，before={} after={}",
+        max_y_before,
+        max_y_after
+    );
+    // 同时验证 scroll_offset 被应用（offset = min_scroll，不贴底）
+    let _ = max_scroll; // 避免 unused 警告
+    assert!(!app.session_mgr.current().ui.scroll_follow);
+}
+
+/// 内容刚好等于视口高度时（无溢出）不应渲染 thumb
+#[tokio::test]
+async fn test_scrollbar_invisible_at_exact_fit() {
+    // 窄屏 40x12，主消息区可能只有 5-7 行
+    // 只放 1-2 条短消息，保证不会溢出
+    let (mut app, mut handle) = App::new_headless(40, 12).await;
+    let notified = handle.render_notify.notified();
+    let vm = MessageViewModel::user("hi".into());
+    app.session_mgr.current_mut().messages.view_messages.push(vm);
+    app.render_rebuild();
+    notified.await;
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let max_scroll = app.session_mgr.current().ui.scrollbar_max_offset;
+    let min_scroll = app.session_mgr.current().ui.scrollbar_min_offset;
+    // 内容未溢出时 max_scroll == min_scroll
+    assert_eq!(
+        max_scroll, min_scroll,
+        "未溢出时 max_scroll 应等于 min_scroll"
+    );
+
+    let thumbs = find_thumb_cells(&handle);
+    assert!(thumbs.is_empty(), "未溢出时不应有 thumb");
+}
+
+/// thumb 与 sticky_header 共存：两者都触发条件 (max_scroll > min_scroll)，应同时显示
+#[tokio::test]
+async fn test_scrollbar_coexists_with_sticky_header() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 设置 last_human_message 触发 sticky_header
+    app.session_mgr.current_mut().metadata.last_human_message =
+        Some("last user message".to_string());
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let snap = handle.snapshot();
+    let snap_text = snap.join("\n");
+    // 两者都应可见
+    assert!(
+        snap_text.contains('\u{2588}'),
+        "应有 thumb，实际:\n{}",
+        snap_text
+    );
+    assert!(
+        snap_text.contains("last user message")
+            || snap_text.contains("last user"),
+        "应有 sticky_header，实际:\n{}",
+        snap_text
+    );
+}
+
+/// thumb 随流式输出增长：内容越多 thumb 应仍正确渲染
+#[tokio::test]
+async fn test_scrollbar_tracks_growing_content() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+
+    // 第一批：少量消息（可能未溢出）
+    push_messages_and_render(&mut app, &handle, 5, "first").await;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_5 = find_thumb_cells(&handle);
+
+    // 追加更多消息触发溢出
+    push_messages_and_render(&mut app, &handle, 25, "second").await;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_30 = find_thumb_cells(&handle);
+
+    // 溢出后应有 thumb
+    assert!(
+        !thumbs_30.is_empty(),
+        "30 条消息后应有 thumb，5 条时 thumb 数={}",
+        thumbs_5.len()
+    );
+
+    // follow-bottom 应保持
+    assert!(
+        app.session_mgr.current().ui.scroll_follow,
+        "流式追加时应保持 follow-bottom"
+    );
+}
+
+/// 键盘滚动字段（scroll_offset/scroll_follow）行为不回归
+#[tokio::test]
+async fn test_scrollbar_keyboard_scroll_state_unchanged() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 渲染一次拿到 scroll 字段
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let follow_before = app.session_mgr.current().ui.scroll_follow;
+    let offset_before = app.session_mgr.current().ui.scroll_offset;
+    let max_scroll = app.session_mgr.current().ui.scrollbar_max_offset;
+    let min_scroll = app.session_mgr.current().ui.scrollbar_min_offset;
+
+    assert!(follow_before, "默认 follow=true");
+    assert!(
+        offset_before <= max_scroll && offset_before >= min_scroll,
+        "offset 应在 [min, max] 范围内：offset={} min={} max={}",
+        offset_before,
+        min_scroll,
+        max_scroll
+    );
+
+    // 手动滚动到中间
+    let mid = (min_scroll + max_scroll) / 2;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    app.session_mgr.current_mut().ui.scroll_offset = mid;
+
+    // 再次渲染，scroll_anchor 为 None 时应保留 manual offset
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let follow_after = app.session_mgr.current().ui.scroll_follow;
+    let offset_after = app.session_mgr.current().ui.scroll_offset;
+
+    assert!(
+        !follow_after,
+        "手动滚动后 scroll_follow 应保持 false（除非滚到底）"
+    );
+    // offset 应该接近 mid（可能被 clamp 但不应是 max_scroll）
+    assert!(
+        offset_after <= mid + 1 && offset_after >= mid.saturating_sub(1),
+        "手动 offset 应保留，mid={} offset_after={}",
+        mid,
+        offset_after
+    );
+}
+
+// ── 主区滚动条 Phase 3：thumb 颜色区分 follow ──────────────────────────
+
+/// thumb 颜色区分 follow 状态：follow=true 用 ACCENT，follow=false 用 MUTED
+#[tokio::test]
+async fn test_scrollbar_thumb_color_reflects_follow_state() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 默认 follow=true → thumb 应为 ACCENT
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_follow = find_thumb_cell_colors(&handle);
+    assert!(!thumbs_follow.is_empty(), "follow 时应有 thumb");
+    let all_accent = thumbs_follow.iter().all(|(_, _, fg)| {
+        matches!(fg, Some(crate::ui::theme::ACCENT))
+    });
+    assert!(
+        all_accent,
+        "follow=true 时所有 thumb 应为 ACCENT 色，实际: {:?}",
+        thumbs_follow.iter().map(|(_, _, fg)| *fg).collect::<Vec<_>>()
+    );
+
+    // 切换到 manual（scroll_follow=false，scroll_offset 设中间）
+    let min = app.session_mgr.current().ui.scrollbar_min_offset;
+    let max = app.session_mgr.current().ui.scrollbar_max_offset;
+    let mid = (min + max) / 2;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    app.session_mgr.current_mut().ui.scroll_offset = mid;
+
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_manual = find_thumb_cell_colors(&handle);
+    assert!(!thumbs_manual.is_empty(), "manual 时应有 thumb");
+    let all_muted = thumbs_manual.iter().all(|(_, _, fg)| {
+        matches!(fg, Some(crate::ui::theme::MUTED))
+    });
+    assert!(
+        all_muted,
+        "follow=false 时所有 thumb 应为 MUTED 色，实际: {:?}",
+        thumbs_manual
+            .iter()
+            .map(|(_, _, fg)| *fg)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// 滚到顶部（manual 但 offset=min）→ MUTED；滚回底部 → 恢复 ACCENT
+#[tokio::test]
+async fn test_scrollbar_thumb_color_transitions_on_scroll() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 初始 follow=true → ACCENT
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs = find_thumb_cell_colors(&handle);
+    let initial_color = thumbs.first().unwrap().2;
+    assert!(
+        matches!(initial_color, Some(crate::ui::theme::ACCENT)),
+        "初始应 ACCENT"
+    );
+
+    // 手动滚到顶 → MUTED
+    let min = app.session_mgr.current().ui.scrollbar_min_offset;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    app.session_mgr.current_mut().ui.scroll_offset = min;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_top = find_thumb_cell_colors(&handle);
+    let top_color = thumbs_top.first().unwrap().2;
+    assert!(
+        matches!(top_color, Some(crate::ui::theme::MUTED)),
+        "滚到顶应 MUTED"
+    );
+
+    // 滚回底部 → follow 自动恢复（render_messages 检测到 offset >= max_scroll 时设 follow=true）
+    let max = app.session_mgr.current().ui.scrollbar_max_offset;
+    app.session_mgr.current_mut().ui.scroll_offset = max;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_bot = find_thumb_cell_colors(&handle);
+    let bot_color = thumbs_bot.first().unwrap().2;
+    assert!(
+        matches!(bot_color, Some(crate::ui::theme::ACCENT)),
+        "滚回底部应恢复 ACCENT"
+    );
+}
+
+// ── 主区滚动条 Phase 5：新消息到达 thumb 闪烁 ──────────────────────────
+
+/// follow=false 时新消息到达，thumb 应短暂切到 ACCENT（闪烁）
+#[tokio::test]
+async fn test_scrollbar_thumb_flashes_on_new_message_when_not_following() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 切到 manual + 中间位置
+    let max = app.session_mgr.current().ui.scrollbar_max_offset;
+    let mid = max / 2;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    app.session_mgr.current_mut().ui.scroll_offset = mid;
+    // last_message_at=None 时 baseline 应为 MUTED
+    app.session_mgr.current_mut().ui.last_message_at = None;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_baseline = find_thumb_cell_colors(&handle);
+    let baseline_color = thumbs_baseline.first().unwrap().2;
+    assert!(
+        matches!(baseline_color, Some(crate::ui::theme::MUTED)),
+        "follow=false 无新消息时应为 MUTED，实际: {:?}",
+        baseline_color
+    );
+
+    // 模拟新消息到达：设 last_message_at=now
+    app.session_mgr.current_mut().ui.last_message_at = Some(std::time::Instant::now());
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_flash = find_thumb_cell_colors(&handle);
+    let flash_color = thumbs_flash.first().unwrap().2;
+    assert!(
+        matches!(flash_color, Some(crate::ui::theme::ACCENT)),
+        "follow=false + 新消息到达（<500ms）时应闪 ACCENT，实际: {:?}",
+        flash_color
+    );
+
+    // 模拟闪烁过期：设 last_message_at=1s 前
+    app.session_mgr.current_mut().ui.last_message_at =
+        Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs_expired = find_thumb_cell_colors(&handle);
+    let expired_color = thumbs_expired.first().unwrap().2;
+    assert!(
+        matches!(expired_color, Some(crate::ui::theme::MUTED)),
+        "闪烁过期（>500ms）后应恢复 MUTED，实际: {:?}",
+        expired_color
+    );
+}
+
+/// follow=true 时新消息到达，thumb 仍是 ACCENT（无视觉差异，因本来就在 follow）
+#[tokio::test]
+async fn test_scrollbar_thumb_no_extra_flash_when_following() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // follow=true + 新消息到达
+    app.session_mgr.current_mut().ui.last_message_at = Some(std::time::Instant::now());
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let thumbs = find_thumb_cell_colors(&handle);
+    let color = thumbs.first().unwrap().2;
+    assert!(
+        matches!(color, Some(crate::ui::theme::ACCENT)),
+        "follow=true 时 thumb 应始终为 ACCENT（与无闪烁一致），实际: {:?}",
+        color
+    );
+}
+
+// ── 主区滚动条 Phase 6：thumb 拖动时显示位置浮层 ──────────────────────
+
+/// 辅助：找出 buffer 中背景为 CURSOR_BG 的 cell（即拖动浮层的 cell）
+fn find_dragging_popover_cells(
+    handle: &crate::ui::headless::HeadlessHandle,
+) -> Vec<(u16, u16, String)> {
+    let buffer = handle.terminal.backend().buffer();
+    let width = buffer.area.width;
+    let mut positions = Vec::new();
+    for i in 0..buffer.content.len() {
+        let cell = &buffer.content[i];
+        if matches!(cell.bg, crate::ui::theme::CURSOR_BG) {
+            let x = (i % width as usize) as u16;
+            let y = (i / width as usize) as u16;
+            positions.push((x, y, cell.symbol().to_string()));
+        }
+    }
+    positions
+}
+
+/// 拖动时应显示位置浮层（背景 CURSOR_BG，含数字与 "/"）
+#[tokio::test]
+async fn test_scrollbar_dragging_shows_position_popover() {
+    let (mut app, mut handle) = App::new_headless(80, 24).await;
+    push_messages_and_render(&mut app, &handle, 30, "padding").await;
+
+    // 非拖动状态：不应有 CURSOR_BG 背景 cell（弹窗外的区域）
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let popover_idle = find_dragging_popover_cells(&handle);
+    assert!(
+        popover_idle.is_empty(),
+        "非拖动状态不应显示位置浮层，实际发现 CURSOR_BG cells: {:?}",
+        popover_idle
+    );
+
+    // 进入拖动状态
+    app.session_mgr.current_mut().ui.messages_scrollbar_dragging = true;
+    app.session_mgr.current_mut().ui.scroll_follow = false;
+    let max = app.session_mgr.current().ui.scrollbar_max_offset;
+    app.session_mgr.current_mut().ui.scroll_offset = max / 2;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+
+    let popover_active = find_dragging_popover_cells(&handle);
+    assert!(
+        !popover_active.is_empty(),
+        "拖动状态应显示位置浮层（至少 1 个 CURSOR_BG cell）"
+    );
+    // 浮层内容应包含 "/"（offset/total 格式）
+    let has_slash = popover_active
+        .iter()
+        .any(|(_, _, s)| s.contains('/'));
+    assert!(
+        has_slash,
+        "浮层应包含 '/' 分隔符，实际内容: {:?}",
+        popover_active.iter().map(|(_, _, s)| s.as_str()).collect::<Vec<_>>()
+    );
+    // 浮层应包含数字（offset 或 total）
+    let has_digit = popover_active.iter().any(|(_, _, s)| {
+        s.chars().any(|c| c.is_ascii_digit())
+    });
+    assert!(
+        has_digit,
+        "浮层应包含数字（offset/total），实际内容: {:?}",
+        popover_active.iter().map(|(_, _, s)| s.as_str()).collect::<Vec<_>>()
+    );
+
+    // 退出拖动状态：浮层消失
+    app.session_mgr.current_mut().ui.messages_scrollbar_dragging = false;
+    handle
+        .terminal
+        .draw(|f| main_ui::render(f, &mut app))
+        .unwrap();
+    let popover_after = find_dragging_popover_cells(&handle);
+    assert!(
+        popover_after.is_empty(),
+        "退出拖动后浮层应消失，实际: {:?}",
+        popover_after
+    );
+}
+

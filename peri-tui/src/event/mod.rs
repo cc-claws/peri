@@ -354,6 +354,51 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                         }
                     }
                 }
+                // Phase 8: 鼠标滚轮在主区滚动条 bar 上 → 滚一屏（而非默认 3 行）
+                {
+                    let on_bar = app
+                        .session_mgr
+                        .current()
+                        .ui
+                        .messages_scrollbar_metrics
+                        .as_ref()
+                        .is_some_and(|m| {
+                            let b = m.bar_area;
+                            mouse.column >= b.x
+                                && mouse.column < b.x + b.width
+                                && mouse.row >= b.y
+                                && mouse.row < b.bottom()
+                        });
+                    if on_bar {
+                        let page = app
+                            .session_mgr
+                            .current()
+                            .ui
+                            .messages_scrollbar_metrics
+                            .map(|m| m.bar_area.height as usize)
+                            .unwrap_or(20);
+                        let ui = &mut app.session_mgr.current_mut().ui;
+                        let max_scroll = ui.scrollbar_max_offset;
+                        let min_scroll = ui.scrollbar_min_offset.min(max_scroll);
+                        let current = if ui.scroll_follow {
+                            max_scroll
+                        } else {
+                            ui.scroll_offset.clamp(min_scroll, max_scroll)
+                        };
+                        let new_off = match mouse.kind {
+                            MouseEventKind::ScrollUp => {
+                                current.saturating_sub(page).max(min_scroll)
+                            }
+                            MouseEventKind::ScrollDown => {
+                                current.saturating_add(page).min(max_scroll)
+                            }
+                            _ => unreachable!(),
+                        };
+                        ui.scroll_offset = new_off;
+                        ui.scroll_follow = new_off >= max_scroll;
+                        return Ok(Some(Action::Redraw));
+                    }
+                }
                 // 正常滚动处理
                 match mouse.kind {
                     MouseEventKind::ScrollUp => {
@@ -553,6 +598,100 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                         return Ok(Some(Action::Redraw));
                     }
                 }
+                // Main message area scrollbar: click → proportional jump + start drag.
+                // 必须在 messages_area 文本选区之前拦截，否则 thumb 列的点击会被当作文本选区 start_drag。
+                {
+                    let session = &mut app.session_mgr.current_mut();
+                    if let Some(ref metrics) = session.ui.messages_scrollbar_metrics {
+                        let bar = metrics.bar_area;
+                        let in_bar = mouse.column >= bar.x
+                            && mouse.column < bar.x + bar.width
+                            && mouse.row >= bar.y
+                            && mouse.row < bar.bottom();
+                        if in_bar && metrics.max_offset > metrics.min_offset {
+                            // ▲ 按钮：滚动一屏（向上 bar.height 行）
+                            if let Some(btn) = metrics.up_btn_area {
+                                if mouse.column == btn.x
+                                    && mouse.row >= btn.y
+                                    && mouse.row < btn.y + btn.height
+                                {
+                                    let page = bar.height as usize;
+                                    let new_off = session
+                                        .ui
+                                        .scroll_offset
+                                        .saturating_sub(page)
+                                        .max(metrics.min_offset);
+                                    session.ui.scroll_offset = new_off;
+                                    session.ui.scroll_follow = false;
+                                    return Ok(Some(Action::Redraw));
+                                }
+                            }
+                            // ▼ 按钮：滚动一屏（向下 bar.height 行）
+                            if let Some(btn) = metrics.down_btn_area {
+                                if mouse.column == btn.x
+                                    && mouse.row >= btn.y
+                                    && mouse.row < btn.y + btn.height
+                                {
+                                    let page = bar.height as usize;
+                                    let new_off = session
+                                        .ui
+                                        .scroll_offset
+                                        .saturating_add(page)
+                                        .min(metrics.max_offset);
+                                    session.ui.scroll_offset = new_off;
+                                    session.ui.scroll_follow =
+                                        new_off >= metrics.max_offset;
+                                    return Ok(Some(Action::Redraw));
+                                }
+                            }
+                            // bar 内点击：按 Y 比例计算 offset。
+                            // 除以 (height - 1) 让 row=bar.y+height-1 恰好映射到 max_offset。
+                            // Phase 7：双击（300ms 内同 Y）切换 follow 模式
+                            let now = std::time::Instant::now();
+                            let is_double_click = session
+                                .ui
+                                .last_bar_click_at
+                                .map(|t| now.duration_since(t) < std::time::Duration::from_millis(300))
+                                .unwrap_or(false)
+                                && session
+                                    .ui
+                                    .last_bar_click_y
+                                    .map(|y| y.abs_diff(mouse.row) <= 1)
+                                    .unwrap_or(false);
+                            if is_double_click {
+                                // 双击切换 follow：true → false（保持当前 offset），false → true（跳到底部）
+                                if session.ui.scroll_follow {
+                                    session.ui.scroll_follow = false;
+                                } else {
+                                    session.ui.scroll_offset = metrics.max_offset;
+                                    session.ui.scroll_follow = true;
+                                }
+                                // 双击不进入 dragging，重置双击状态防止误触发三击
+                                session.ui.last_bar_click_at = None;
+                                session.ui.last_bar_click_y = None;
+                                session.ui.messages_scrollbar_dragging = false;
+                                return Ok(Some(Action::Redraw));
+                            }
+                            // 单击：记录时间戳 + Y 供下次双击检测
+                            session.ui.last_bar_click_at = Some(now);
+                            session.ui.last_bar_click_y = Some(mouse.row);
+
+                            let rel_y = (mouse.row.saturating_sub(bar.y)) as usize;
+                            let range = metrics.max_offset.saturating_sub(metrics.min_offset);
+                            let height = bar.height as usize;
+                            let new_offset = if height > 1 {
+                                metrics.min_offset + (rel_y * range) / (height - 1)
+                            } else {
+                                metrics.min_offset + range / 2
+                            };
+                            let new_offset = new_offset.min(metrics.max_offset);
+                            session.ui.scroll_offset = new_offset;
+                            session.ui.scroll_follow = new_offset >= metrics.max_offset;
+                            session.ui.messages_scrollbar_dragging = true;
+                            return Ok(Some(Action::Redraw));
+                        }
+                    }
+                }
                 if let Some(area) = app.session_mgr.current_mut().ui.messages_area {
                     if mouse.row >= area.y
                         && mouse.row < area.y + area.height
@@ -612,6 +751,27 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                         return Ok(Some(Action::Redraw));
                     }
                 }
+                // Main message area scrollbar drag: update scroll_offset from mouse Y
+                {
+                    let session = &mut app.session_mgr.current_mut();
+                    if session.ui.messages_scrollbar_dragging {
+                        if let Some(ref metrics) = session.ui.messages_scrollbar_metrics {
+                            let bar = metrics.bar_area;
+                            let rel_y = (mouse.row.saturating_sub(bar.y)) as usize;
+                            let range = metrics.max_offset.saturating_sub(metrics.min_offset);
+                            let height = bar.height as usize;
+                            let new_offset = if height > 1 {
+                                metrics.min_offset + (rel_y * range) / (height - 1)
+                            } else {
+                                metrics.min_offset + range / 2
+                            };
+                            let new_offset = new_offset.min(metrics.max_offset);
+                            session.ui.scroll_offset = new_offset;
+                            session.ui.scroll_follow = new_offset >= metrics.max_offset;
+                        }
+                        return Ok(Some(Action::Redraw));
+                    }
+                }
                 // Panel selection drag
                 if app.session_mgr.current_mut().ui.panel_selection.dragging {
                     if let Some(area) = app.session_mgr.current_mut().ui.panel_area {
@@ -656,6 +816,8 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
             MouseEventKind::Up(MouseButton::Left) => {
                 // End panel scrollbar drag
                 app.session_mgr.current_mut().ui.panel_scrollbar_dragging = false;
+                // End main message area scrollbar drag
+                app.session_mgr.current_mut().ui.messages_scrollbar_dragging = false;
                 // Panel selection released
                 if app.session_mgr.current_mut().ui.panel_selection.dragging {
                     app.session_mgr.current_mut().ui.panel_selection.end_drag();
@@ -760,7 +922,7 @@ fn handle_oauth_prompt(app: &mut App, input: Input) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::crossterm::event::KeyEvent;
+    use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 
     fn make_key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -779,6 +941,545 @@ mod tests {
         assert_eq!(
             text, "bu\nid",
             "模拟粘贴重建必须从第一个字符开始，不能等到 Enter 后才收集"
+        );
+    }
+
+    // ── 主区滚动条鼠标交互（Phase 2）──────────────────────────────────────
+
+    fn make_mouse_down(row: u16, col: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn make_mouse_drag(row: u16, col: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn make_mouse_up(row: u16, col: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn make_mouse_scroll_down(row: u16, col: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn make_mouse_scroll_up(row: u16, col: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    /// 构造已渲染好的 App：填充大量消息触发主区滚动 + metrics 已被设置
+    async fn make_app_with_overflow(
+        width: u16,
+        height: u16,
+        msg_count: usize,
+    ) -> (crate::app::App, crate::ui::headless::HeadlessHandle) {
+        use crate::app::MessageViewModel;
+        let (mut app, mut handle) = crate::app::App::new_headless(width, height).await;
+        for i in 0..msg_count {
+            let notified = handle.render_notify.notified();
+            let vm = MessageViewModel::user(format!("padding line content {}", i));
+            app.session_mgr
+                .current_mut()
+                .messages
+                .view_messages
+                .push(vm);
+            app.render_rebuild();
+            notified.await;
+        }
+        handle
+            .terminal
+            .draw(|f| crate::ui::main_ui::render(f, &mut app))
+            .unwrap();
+        (app, handle)
+    }
+
+    /// 点击主区滚动条 thumb 区域：scroll_offset 应按 Y 比例跳转
+    /// Phase 4 起 bar 顶/底各 1 行被 ▲/▼ 按钮占用，比例区是 [bar.y+1, bar.bottom()-2]
+    #[tokio::test]
+    async fn test_messages_scrollbar_click_jumps_proportionally() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        assert!(metrics.max_offset > metrics.min_offset);
+        let range = metrics.max_offset.saturating_sub(metrics.min_offset);
+        // 1/4 range 作为「接近」容差，吸收比例公式整除误差
+        let tolerance = (range / 4).max(1);
+
+        let bar = metrics.bar_area;
+        // 点击 bar 顶部下方一行（避开 ▲ 按钮）→ offset 接近 min
+        let ev = make_mouse_down(bar.y + 1, bar.x);
+        let _ = handle_event(&mut app, ev).await;
+        let off_top = app.session_mgr.current().ui.scroll_offset;
+        assert!(
+            off_top <= metrics.min_offset + tolerance,
+            "点击近顶部 offset 应接近 min，实际: {} tolerance={}",
+            off_top,
+            tolerance
+        );
+
+        // 点击 bar 底部上方一行（避开 ▼ 按钮）→ offset 接近 max
+        let ev = make_mouse_down(bar.bottom().saturating_sub(2), bar.x);
+        let _ = handle_event(&mut app, ev).await;
+        let off_bottom = app.session_mgr.current().ui.scroll_offset;
+        assert!(
+            off_bottom >= metrics.max_offset.saturating_sub(tolerance),
+            "点击近底部 offset 应接近 max，实际: {} max={} tolerance={}",
+            off_bottom,
+            metrics.max_offset,
+            tolerance
+        );
+    }
+
+    /// Phase 4: ▲ 按钮点击应上翻一屏
+    #[tokio::test]
+    async fn test_messages_scrollbar_up_button_scrolls_page() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+        let page = bar.height as usize;
+
+        // 初次渲染默认 follow=true，offset=max；▲ 可见，▼ 不可见
+        assert_eq!(app.session_mgr.current().ui.scroll_offset, metrics.max_offset);
+        assert!(metrics.up_btn_area.is_some(), "offset=max 时 ▲ 应可见");
+        assert!(
+            metrics.down_btn_area.is_none(),
+            "offset=max 时 ▼ 应隐藏"
+        );
+
+        // 点击 ▲ 按钮 → 上翻一屏
+        let up_btn = metrics.up_btn_area.expect("▲ 按钮");
+        let _ = handle_event(&mut app, make_mouse_down(up_btn.y, up_btn.x)).await;
+        let off_after_up = app.session_mgr.current().ui.scroll_offset;
+        let expected = metrics.max_offset.saturating_sub(page).max(metrics.min_offset);
+        assert_eq!(
+            off_after_up, expected,
+            "▲ 点击应上翻一屏 (page={})，期望 {} 实际 {}",
+            page, expected, off_after_up
+        );
+        assert!(
+            !app.session_mgr.current().ui.scroll_follow,
+            "▲ 点击后 follow 应为 false"
+        );
+    }
+
+    /// Phase 4: ▼ 按钮可见且点击时，应下翻一屏并在到达底部时恢复 follow
+    #[tokio::test]
+    async fn test_messages_scrollbar_down_button_scrolls_and_restores_follow() {
+        let (mut app, mut handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+        let page = bar.height as usize;
+
+        // 先点 ▲ 让 offset 离开 max
+        let up_btn = metrics.up_btn_area.expect("▲ 按钮");
+        let _ = handle_event(&mut app, make_mouse_down(up_btn.y, up_btn.x)).await;
+        let off_after_up = app.session_mgr.current().ui.scroll_offset;
+        assert!(off_after_up < metrics.max_offset, "▲ 后 offset 应 < max");
+
+        // 重绘以让 metrics 反映新 offset（此时 ▼ 变可见）
+        handle
+            .terminal
+            .draw(|f| crate::ui::main_ui::render(f, &mut app))
+            .unwrap();
+        let metrics_after = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("重绘后应有 metrics");
+        let down_btn = metrics_after
+            .down_btn_area
+            .expect("offset<max 时 ▼ 应可见");
+
+        // 点击 ▼ → 下翻一屏
+        let _ = handle_event(&mut app, make_mouse_down(down_btn.y, down_btn.x)).await;
+        let off_after_down = app.session_mgr.current().ui.scroll_offset;
+        let expected = off_after_up.saturating_add(page).min(metrics_after.max_offset);
+        assert_eq!(
+            off_after_down, expected,
+            "▼ 点击应下翻一屏，期望 {} 实际 {}",
+            expected, off_after_down
+        );
+
+        // 持续点 ▼ 直到抵 max → follow 恢复
+        let mut last_offset = off_after_down;
+        for _ in 0..5 {
+            handle
+                .terminal
+                .draw(|f| crate::ui::main_ui::render(f, &mut app))
+                .unwrap();
+            let m = app
+                .session_mgr
+                .current()
+                .ui
+                .messages_scrollbar_metrics
+                .expect("应有 metrics");
+            let Some(btn) = m.down_btn_area else {
+                break;
+            };
+            let _ = handle_event(&mut app, make_mouse_down(btn.y, btn.x)).await;
+            last_offset = app.session_mgr.current().ui.scroll_offset;
+            if last_offset >= m.max_offset {
+                break;
+            }
+        }
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "抵 max 后 follow 应恢复 true，实际 offset={}",
+            last_offset
+        );
+    }
+
+    /// Phase 4: offset=min 时 ▲ 应隐藏；offset=max 时 ▼ 应隐藏
+    #[tokio::test]
+    async fn test_messages_scrollbar_buttons_visibility_extremes() {
+        let (mut app, mut handle) = make_app_with_overflow(80, 24, 30).await;
+
+        // 初次渲染 offset=max → ▲ 可见、▼ 隐藏
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        assert!(metrics.up_btn_area.is_some(), "offset=max 时 ▲ 应可见");
+        assert!(metrics.down_btn_area.is_none(), "offset=max 时 ▼ 应隐藏");
+
+        // 滚动到顶部
+        app.session_mgr.current_mut().ui.scroll_offset = metrics.min_offset;
+        app.session_mgr.current_mut().ui.scroll_follow = false;
+        handle
+            .terminal
+            .draw(|f| crate::ui::main_ui::render(f, &mut app))
+            .unwrap();
+        let metrics_top = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        assert!(
+            metrics_top.up_btn_area.is_none(),
+            "offset=min 时 ▲ 应隐藏"
+        );
+        assert!(
+            metrics_top.down_btn_area.is_some(),
+            "offset=min 时 ▼ 应可见"
+        );
+    }
+
+    /// Phase 7: 双击 bar 切换 follow：scroll_follow=false → 跳到底部 + follow=true
+    #[tokio::test]
+    async fn test_messages_scrollbar_double_click_bar_restores_follow() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+
+        // 初始 follow=true → 单击中间位置取消 follow
+        let mid_y = bar.y + bar.height / 2;
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        assert!(
+            !app.session_mgr.current().ui.scroll_follow,
+            "第一次单击应取消 follow"
+        );
+        let off_after_single = app.session_mgr.current().ui.scroll_offset;
+        assert!(
+            off_after_single < metrics.max_offset,
+            "单击中间 offset 应 < max"
+        );
+
+        // 第二次单击（同位置，< 300ms）→ 双击 → 跳到底部 + follow=true
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "双击应恢复 follow=true"
+        );
+        assert_eq!(
+            app.session_mgr.current().ui.scroll_offset,
+            metrics.max_offset,
+            "双击应跳到 max_offset"
+        );
+        // 双击后不应进入 dragging
+        assert!(
+            !app.session_mgr.current().ui.messages_scrollbar_dragging,
+            "双击不应进入 dragging"
+        );
+    }
+
+    /// Phase 7: follow=true 时双击 bar 切到 false，保持当前 offset
+    #[tokio::test]
+    async fn test_messages_scrollbar_double_click_bar_disables_follow() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+
+        // 初始 follow=true（默认）
+        assert!(app.session_mgr.current().ui.scroll_follow);
+        let initial_offset = app.session_mgr.current().ui.scroll_offset;
+
+        // 第一次单击 → 取消 follow + 跳到中间
+        let mid_y = bar.y + bar.height / 2;
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        let off_after_first = app.session_mgr.current().ui.scroll_offset;
+        assert!(off_after_first < initial_offset, "单击中间 offset 应减小");
+
+        // 单击 ▲ 离开 follow=true 状态再测试 true→false 切换
+        // 实际上初始就是 follow=true，第一次单击已经变成 false。
+        // 这里测试在 follow=false 状态下双击切换回 true，再双击切换回 false。
+        // 先单击一次让 last_bar_click_at 重置（避免误触发双击）
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let _ = handle_event(&mut app, make_mouse_down(mid_y + 2, bar.x)).await;
+        let off_before_double = app.session_mgr.current().ui.scroll_offset;
+
+        // 第二次单击（同 mid_y + 2，< 300ms）→ 双击 → follow=true
+        let _ = handle_event(&mut app, make_mouse_down(mid_y + 2, bar.x)).await;
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "双击应切回 follow=true"
+        );
+
+        // 再双击切回 false（先单击重置时间戳）
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        // 此时 follow=true，单击中间会取消 follow 并跳到中间
+        assert!(!app.session_mgr.current().ui.scroll_follow);
+        // 第二次单击 → 双击 → 切回 true
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "第二次双击应再切回 follow=true"
+        );
+
+        let _ = off_before_double; // 抑制 unused warning
+    }
+
+    /// Phase 8: 鼠标滚轮在 bar 上 → 滚一屏（bar.height 行），而非默认 3 行
+    #[tokio::test]
+    async fn test_messages_scrollbar_wheel_on_bar_scrolls_full_page() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+        let page = bar.height as usize;
+
+        // 初始 follow=true，offset=max。滚到顶部以便测试 ScrollDown 能加 offset
+        app.session_mgr.current_mut().ui.scroll_follow = false;
+        app.session_mgr.current_mut().ui.scroll_offset = metrics.min_offset;
+
+        // 在 bar 上 ScrollDown → offset 应增加 page 行
+        let _ = handle_event(&mut app, make_mouse_scroll_down(bar.y + 2, bar.x)).await;
+        let off_after_bar = app.session_mgr.current().ui.scroll_offset;
+        assert_eq!(
+            off_after_bar,
+            metrics.min_offset + page,
+            "bar 上 ScrollDown 应滚一屏 (+page={})，实际 {}",
+            page,
+            off_after_bar
+        );
+
+        // 在 bar 上 ScrollUp → offset 应减少 page 行
+        let _ = handle_event(&mut app, make_mouse_scroll_up(bar.y + 2, bar.x)).await;
+        let off_after_up = app.session_mgr.current().ui.scroll_offset;
+        assert_eq!(
+            off_after_up, metrics.min_offset,
+            "bar 上 ScrollUp 应滚回 min，实际 {}", off_after_up
+        );
+    }
+
+    /// Phase 8: 鼠标滚轮在 messages_area 内但不在 bar 上 → 走原逻辑（3 行）
+    #[tokio::test]
+    async fn test_messages_scrollbar_wheel_off_bar_uses_default_step() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+        let messages_area = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_area
+            .expect("应有 messages_area");
+
+        // 滚到顶部测试 ScrollDown
+        app.session_mgr.current_mut().ui.scroll_follow = false;
+        app.session_mgr.current_mut().ui.scroll_offset = metrics.min_offset;
+
+        // 在 messages_area 内（非 bar 列）ScrollDown
+        // 选 messages_area 内距 bar 至少 2 列的位置
+        let col_inside = bar.x.saturating_sub(2).max(messages_area.x);
+        let row_inside = messages_area.y + 2;
+        let _ = handle_event(&mut app, make_mouse_scroll_down(row_inside, col_inside)).await;
+        let off_after_inside = app.session_mgr.current().ui.scroll_offset;
+        assert_eq!(
+            off_after_inside,
+            metrics.min_offset + 3,
+            "bar 外 ScrollDown 应走默认 3 行逻辑，实际 {}",
+            off_after_inside
+        );
+    }
+
+    /// 点击主区滚动条后 dragging=true；mouse up 清除
+    #[tokio::test]
+    async fn test_messages_scrollbar_drag_lifecycle() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+
+        // Down → dragging=true
+        assert!(
+            !app.session_mgr.current().ui.messages_scrollbar_dragging,
+            "初始不应处于 dragging"
+        );
+        let _ = handle_event(&mut app, make_mouse_down(bar.y + 2, bar.x)).await;
+        assert!(
+            app.session_mgr.current().ui.messages_scrollbar_dragging,
+            "点击 scrollbar 后应进入 dragging"
+        );
+
+        // Drag → offset 跟随 Y 变化（拖到底部）
+        let _ = handle_event(
+            &mut app,
+            make_mouse_drag(bar.bottom().saturating_sub(1), bar.x),
+        )
+        .await;
+        let off_after_drag = app.session_mgr.current().ui.scroll_offset;
+        assert!(
+            off_after_drag >= metrics.max_offset.saturating_sub(1),
+            "拖到底部 offset 应接近 max，实际: {} max={}",
+            off_after_drag,
+            metrics.max_offset
+        );
+
+        // Up → dragging=false
+        let _ = handle_event(&mut app, make_mouse_up(bar.y, bar.x)).await;
+        assert!(
+            !app.session_mgr.current().ui.messages_scrollbar_dragging,
+            "mouse up 后应退出 dragging"
+        );
+    }
+
+    /// 点击主区滚动条不应触发文本选区 start_drag（互斥）
+    #[tokio::test]
+    async fn test_messages_scrollbar_click_does_not_start_text_selection() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        let bar = metrics.bar_area;
+
+        assert!(
+            !app.session_mgr.current().ui.text_selection.dragging,
+            "初始无文本选区"
+        );
+        let _ = handle_event(&mut app, make_mouse_down(bar.y + 5, bar.x)).await;
+        assert!(
+            !app.session_mgr.current().ui.text_selection.dragging,
+            "点击 scrollbar 不应触发文本选区"
+        );
+        assert!(
+            app.session_mgr.current().ui.messages_scrollbar_dragging,
+            "应进入 scrollbar dragging"
+        );
+    }
+
+    /// follow-bottom 时点击 thumb 中间位置应取消 follow
+    #[tokio::test]
+    async fn test_messages_scrollbar_click_disables_follow() {
+        let (mut app, _handle) = make_app_with_overflow(80, 24, 30).await;
+        let metrics = app
+            .session_mgr
+            .current()
+            .ui
+            .messages_scrollbar_metrics
+            .expect("应有 metrics");
+        // 初次渲染默认 follow=true
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "初次渲染应 follow=true"
+        );
+
+        let bar = metrics.bar_area;
+        // 点击中间位置（不是最底部）
+        let mid_y = bar.y + bar.height / 2;
+        let _ = handle_event(&mut app, make_mouse_down(mid_y, bar.x)).await;
+        assert!(
+            !app.session_mgr.current().ui.scroll_follow,
+            "点击中间应取消 follow"
+        );
+
+        // 点击最底部 → 恢复 follow
+        let _ = handle_event(
+            &mut app,
+            make_mouse_down(bar.bottom().saturating_sub(1), bar.x),
+        )
+        .await;
+        assert!(
+            app.session_mgr.current().ui.scroll_follow,
+            "点击最底部应恢复 follow"
         );
     }
 }

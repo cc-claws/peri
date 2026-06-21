@@ -10,6 +10,24 @@ pub struct PastedTextBlock {
     pub content: String,
 }
 
+/// 主区滚动条几何信息（用于鼠标点击/拖动交互）。
+///
+/// 与 panel 的 `ScrollbarMetrics` 区别：主区滚动范围是 `usize`（max_scroll 可能 > u16::MAX）。
+/// Phase 4 起渲染 ▲/▼ 按钮（与 panel scrollbar 一致），bar 内部可点击高度为 `bar.height - 2`。
+#[derive(Debug, Clone, Copy)]
+pub struct MessagesScrollbarMetrics {
+    /// 滚动条列区域（宽 1，主消息区全高，位于 messages_area.right() - 1）
+    pub bar_area: ratatui::layout::Rect,
+    /// 可滚动范围下界（含 committed visual start）
+    pub min_offset: usize,
+    /// 可滚动范围上界
+    pub max_offset: usize,
+    /// ▲ 按钮区域（offset > min 时显示），点击滚动一屏
+    pub up_btn_area: Option<ratatui::layout::Rect>,
+    /// ▼ 按钮区域（offset < max 时显示），点击滚动一屏
+    pub down_btn_area: Option<ratatui::layout::Rect>,
+}
+
 /// UI 交互状态：会话级的输入、滚动、选区、历史等。
 pub struct UiState {
     pub textarea: TextArea<'static>,
@@ -34,6 +52,10 @@ pub struct UiState {
     pub scrollbar_min_offset: usize,
     /// 消息区域滚动条的最大偏移量（内容高度 - 可见高度）
     pub scrollbar_max_offset: usize,
+    /// 主区滚动条几何信息（鼠标交互用）；None 表示当前帧未渲染滚动条
+    pub messages_scrollbar_metrics: Option<MessagesScrollbarMetrics>,
+    /// 用户是否正在拖动主区滚动条
+    pub messages_scrollbar_dragging: bool,
     /// Panel scrollbar geometry for mouse interaction
     pub panel_scrollbar_metrics: Option<ScrollbarMetrics>,
     /// Whether user is currently dragging the panel scrollbar
@@ -56,6 +78,12 @@ pub struct UiState {
     pub cursor_visible: bool,
     /// 光标闪烁计数器（每 tick 递增，每 15 tick 切换一次，约 500ms）
     pub cursor_tick_count: u8,
+    /// 最近一次 view_messages 内容变化时间戳（Phase 5：thumb 短暂高亮指示）
+    pub last_message_at: Option<std::time::Instant>,
+    /// Phase 7：上次点击 bar 的时间戳（双击检测，300ms 阈值）
+    pub last_bar_click_at: Option<std::time::Instant>,
+    /// Phase 7：上次点击 bar 的 Y 坐标（双击必须同一区域）
+    pub last_bar_click_y: Option<u16>,
 }
 
 impl UiState {
@@ -83,6 +111,8 @@ impl UiState {
             panel_scroll_offset: 0,
             scrollbar_min_offset: 0,
             scrollbar_max_offset: 0,
+            messages_scrollbar_metrics: None,
+            messages_scrollbar_dragging: false,
             panel_scrollbar_metrics: None,
             panel_scrollbar_dragging: false,
             at_mention: AtMentionState::new(),
@@ -94,6 +124,9 @@ impl UiState {
             next_pasted_text_id: 1,
             cursor_visible: true,
             cursor_tick_count: 0,
+            last_message_at: None,
+            last_bar_click_at: None,
+            last_bar_click_y: None,
         }
     }
 

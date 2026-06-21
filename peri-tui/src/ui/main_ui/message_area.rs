@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, ScrollbarState, Wrap},
     Frame,
 };
 
@@ -11,6 +11,7 @@ use crate::{
     ui::{render_thread::RenderEvent, theme, welcome},
 };
 use peri_middlewares::prelude::TodoStatus;
+use peri_widgets::scrollable::unified_vertical_scrollbar;
 
 use super::sticky_header;
 
@@ -89,8 +90,11 @@ pub(crate) fn render_messages(
     // 渲染驱动宽度同步：用 last_resize_width 去抖——宽度未变时跳过重复发送，
     // 避免每秒 N 次 resize 事件导致渲染线程队列积压和 CPU 暴涨
     // （参见 spec/issues/2026-05-14-streaming-resize-cpu-spike）。
+    //
+    // 右侧预留 1 列 gutter 给主区滚动条（`unified_vertical_scrollbar`），
+    // 保证 wrap 宽度与 Paragraph 渲染宽度一致，避免 thumb 覆盖文字最后一列。
     {
-        let text_area_width = inner.width;
+        let text_area_width = inner.width.saturating_sub(1);
         let cache_width = app.session_mgr.current().messages.render_cache.read().width;
         let last_resize = app.session_mgr.current().messages.last_resize_width;
         if last_resize != Some(text_area_width)
@@ -176,10 +180,143 @@ pub(crate) fn render_messages(
     // Paragraph 不填满 area 时未覆盖 cell 会保留旧值，最终经 diff 输出到终端造成渲染残留。
     // 清空后 Paragraph 只渲染有效行、剩余为空格，确保每帧 viewport 区域 buffer 正确。
     f.render_widget(Clear, inner);
+
+    // 内容区减 1 列（最右列预留给滚动条 thumb），与 cache.width 同步值一致，
+    // 避免按 inner.width wrap 后 Paragraph 渲染时最右字符被 thumb 覆盖。
+    let content_area = Rect {
+        width: inner.width.saturating_sub(1),
+        ..inner
+    };
     let paragraph = Paragraph::new(Text::from(clip.lines))
         .scroll((clip.local_offset, 0))
         .wrap(Wrap { trim: false });
-    f.render_widget(paragraph, inner);
+    f.render_widget(paragraph, content_area);
+
+    // 主区右侧滚动条：仅在内容超屏时渲染，thumb 由 ScrollbarState 自动定位。
+    // Phase 3：thumb 颜色区分 follow 状态——follow=true 用 ACCENT 色（贴底强调），
+    //          follow=false 用 MUTED 色（manual 滚动时灰色弱化）。
+    // Phase 4：渲染 ▲/▼ 按钮（与 panel scrollbar 体验一致），点击滚动一屏。
+    // Phase 5：follow=false 时若最近 500ms 内有新内容到达，thumb 切到 ACCENT
+    //          形成"闪烁"反馈（MUTED → ACCENT 视觉跳变）。
+    if max_scroll > min_scroll && inner.height > 0 {
+        let scroll_range = max_scroll.saturating_sub(min_scroll);
+        let position = offset.saturating_sub(min_scroll).min(scroll_range);
+        let mut scrollbar_state = ScrollbarState::new(scroll_range)
+            .viewport_content_length(visible_height as usize)
+            .position(position);
+        let follow = app.session_mgr.current().ui.scroll_follow;
+        let flashing = !follow
+            && app
+                .session_mgr
+                .current()
+                .ui
+                .last_message_at
+                .map(|t| t.elapsed() < std::time::Duration::from_millis(500))
+                .unwrap_or(false);
+        let thumb_color = if follow || flashing {
+            theme::ACCENT
+        } else {
+            theme::MUTED
+        };
+        let scrollbar =
+            unified_vertical_scrollbar().style(Style::default().fg(thumb_color));
+        f.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
+
+        // 暴露鼠标交互几何：bar 在 messages_area 最右 1 列，全高
+        let bar_area = Rect {
+            x: inner.right().saturating_sub(1),
+            y: inner.y,
+            width: 1,
+            height: inner.height,
+        };
+
+        // ▲ 按钮（offset > min 时显示）
+        let up_btn_area = if offset > min_scroll && bar_area.height >= 3 {
+            let btn = Rect {
+                x: bar_area.x,
+                y: bar_area.y,
+                width: 1,
+                height: 1,
+            };
+            let arrow = Paragraph::new(Text::from(Span::styled(
+                "▲",
+                Style::default().fg(thumb_color).add_modifier(Modifier::BOLD),
+            )));
+            f.render_widget(arrow, btn);
+            Some(btn)
+        } else {
+            None
+        };
+
+        // ▼ 按钮（offset < max 时显示）
+        let down_btn_area = if offset < max_scroll && bar_area.height >= 3 {
+            let btn = Rect {
+                x: bar_area.x,
+                y: bar_area.bottom().saturating_sub(1),
+                width: 1,
+                height: 1,
+            };
+            let arrow = Paragraph::new(Text::from(Span::styled(
+                "▼",
+                Style::default().fg(thumb_color).add_modifier(Modifier::BOLD),
+            )));
+            f.render_widget(arrow, btn);
+            Some(btn)
+        } else {
+            None
+        };
+
+        app.session_mgr.current_mut().ui.messages_scrollbar_metrics =
+            Some(crate::app::MessagesScrollbarMetrics {
+                bar_area,
+                min_offset: min_scroll,
+                max_offset: max_scroll,
+                up_btn_area,
+                down_btn_area,
+            });
+
+        // Phase 6：thumb 拖动期间显示 `offset/total` 浮层（bar 左侧，垂直居中）
+        // 覆盖 1 行消息内容，但拖动时间短，可接受
+        if app.session_mgr.current().ui.messages_scrollbar_dragging {
+            let total = max_scroll;
+            let current = offset.min(total);
+            let label = format!(" {}/{} ", current, total);
+            let label_width = label.chars().count() as u16;
+            let popover_x = bar_area.x.saturating_sub(label_width);
+            let popover_y = bar_area.y + bar_area.height / 2;
+            // 浮层宽度钳位：label_width 但不超过 bar 左侧可用空间
+            let actual_width = label_width.min(bar_area.x);
+            if actual_width > 0 {
+                let popover_area = Rect {
+                    x: popover_x,
+                    y: popover_y,
+                    width: actual_width,
+                    height: 1,
+                };
+                // 截取 label 右侧 actual_width 个字符（保持 [N/M] 结构）
+                let visible_label: String = label
+                    .chars()
+                    .rev()
+                    .take(actual_width as usize)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                let popover = Paragraph::new(Text::from(Span::styled(
+                    visible_label,
+                    Style::default()
+                        .fg(theme::TEXT)
+                        .bg(theme::CURSOR_BG)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                f.render_widget(Clear, popover_area);
+                f.render_widget(popover, popover_area);
+            }
+        }
+    } else {
+        // 不渲染时清掉 metrics，避免 stale 几何误导鼠标点击
+        app.session_mgr.current_mut().ui.messages_scrollbar_metrics = None;
+    }
 }
 
 fn committed_visual_start(

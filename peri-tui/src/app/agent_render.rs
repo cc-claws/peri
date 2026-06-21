@@ -92,6 +92,12 @@ impl App {
 
     /// 将 PipelineAction 映射到 view_messages 更新 + RenderEvent 发送
     pub(crate) fn apply_pipeline_action(&mut self, action: PipelineAction) {
+        // Phase 5：实际内容变化的 action 记录时间戳，供 thumb 短暂高亮使用
+        let updates_content = !matches!(action, PipelineAction::None);
+        if updates_content {
+            self.session_mgr.current_mut().ui.last_message_at =
+                Some(std::time::Instant::now());
+        }
         match action {
             PipelineAction::None => {}
             PipelineAction::AddMessage(vm) => {

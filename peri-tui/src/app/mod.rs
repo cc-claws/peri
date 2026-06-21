@@ -35,6 +35,7 @@ mod session_manager;
 pub use session_manager::SessionManager;
 
 mod ui_state;
+pub use ui_state::MessagesScrollbarMetrics;
 pub use ui_state::UiState;
 pub use ui_state::PastedTextBlock;
 
