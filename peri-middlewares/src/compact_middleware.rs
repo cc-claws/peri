@@ -115,6 +115,8 @@ impl CompactMiddleware {
             "",
             &self.provider_name,
             Some(msg_count),
+            // compact 路径不触发 SessionEnd，source 参数无意义，传 None
+            None,
         )
         .await
     }

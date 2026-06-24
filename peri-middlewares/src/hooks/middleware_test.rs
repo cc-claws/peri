@@ -672,3 +672,156 @@ async fn test_permission_request_skipped_for_non_sensitive_tools() {
         "PermissionRequest should NOT fire for non-sensitive tools"
     );
 }
+
+// === on_error StopFailure 触发范围测试（issue #5）===
+//
+// 按 Claude Code 规范，StopFailure 仅在 API/LLM 错误时触发。
+// 用户中断、最大迭代次数、工具拒绝等不应触发 StopFailure。
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_on_error_stop_failure_fires_for_llm_error() {
+    let marker_path = "/tmp/peri_stopfailure_llm_error_marker";
+    let _ = std::fs::remove_file(marker_path);
+
+    let hook: HookType = serde_json::from_value(serde_json::json!({
+        "type": "command",
+        "command": format!("echo fired > {}", marker_path),
+        "async": false
+    }))
+    .unwrap();
+
+    let registered = make_registered(HookEvent::StopFailure, hook);
+    let mw = make_middleware(vec![registered]);
+
+    let error = AgentError::LlmError("connection refused".to_string());
+    let _ = mw
+        .on_error(&mut peri_agent::agent::state::AgentState::new("/test"), &error)
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        std::path::Path::new(marker_path).exists(),
+        "LlmError 应触发 StopFailure"
+    );
+    let _ = std::fs::remove_file(marker_path);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_on_error_stop_failure_fires_for_llm_http_error() {
+    let marker_path = "/tmp/peri_stopfailure_llm_http_marker";
+    let _ = std::fs::remove_file(marker_path);
+
+    let hook: HookType = serde_json::from_value(serde_json::json!({
+        "type": "command",
+        "command": format!("echo fired > {}", marker_path),
+        "async": false
+    }))
+    .unwrap();
+
+    let registered = make_registered(HookEvent::StopFailure, hook);
+    let mw = make_middleware(vec![registered]);
+
+    let error = AgentError::LlmHttpError {
+        status: 500,
+        message: "Internal Server Error".to_string(),
+    };
+    let _ = mw
+        .on_error(&mut peri_agent::agent::state::AgentState::new("/test"), &error)
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        std::path::Path::new(marker_path).exists(),
+        "LlmHttpError 应触发 StopFailure"
+    );
+    let _ = std::fs::remove_file(marker_path);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_on_error_stop_failure_skipped_for_interrupted() {
+    let marker_path = "/tmp/peri_stopfailure_interrupted_marker";
+    let _ = std::fs::remove_file(marker_path);
+
+    let hook: HookType = serde_json::from_value(serde_json::json!({
+        "type": "command",
+        "command": format!("echo fired > {}", marker_path),
+        "async": false
+    }))
+    .unwrap();
+
+    let registered = make_registered(HookEvent::StopFailure, hook);
+    let mw = make_middleware(vec![registered]);
+
+    let error = AgentError::Interrupted;
+    let _ = mw
+        .on_error(&mut peri_agent::agent::state::AgentState::new("/test"), &error)
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !std::path::Path::new(marker_path).exists(),
+        "Interrupted 不应触发 StopFailure（用户主动中断，非 API 错误）"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_on_error_stop_failure_skipped_for_max_iterations() {
+    let marker_path = "/tmp/peri_stopfailure_max_iter_marker";
+    let _ = std::fs::remove_file(marker_path);
+
+    let hook: HookType = serde_json::from_value(serde_json::json!({
+        "type": "command",
+        "command": format!("echo fired > {}", marker_path),
+        "async": false
+    }))
+    .unwrap();
+
+    let registered = make_registered(HookEvent::StopFailure, hook);
+    let mw = make_middleware(vec![registered]);
+
+    let error = AgentError::MaxIterationsExceeded(500);
+    let _ = mw
+        .on_error(&mut peri_agent::agent::state::AgentState::new("/test"), &error)
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !std::path::Path::new(marker_path).exists(),
+        "MaxIterationsExceeded 不应触发 StopFailure（循环上限，非 API 错误）"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_on_error_stop_failure_skipped_for_tool_rejected() {
+    let marker_path = "/tmp/peri_stopfailure_tool_rejected_marker";
+    let _ = std::fs::remove_file(marker_path);
+
+    let hook: HookType = serde_json::from_value(serde_json::json!({
+        "type": "command",
+        "command": format!("echo fired > {}", marker_path),
+        "async": false
+    }))
+    .unwrap();
+
+    let registered = make_registered(HookEvent::StopFailure, hook);
+    let mw = make_middleware(vec![registered]);
+
+    let error = AgentError::ToolRejected {
+        tool: "Write".to_string(),
+        reason: "user denied".to_string(),
+    };
+    let _ = mw
+        .on_error(&mut peri_agent::agent::state::AgentState::new("/test"), &error)
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !std::path::Path::new(marker_path).exists(),
+        "ToolRejected 不应触发 StopFailure（HITL/hook 拒绝，非 API 错误）"
+    );
+}

@@ -961,6 +961,9 @@ async fn run_app(
                         "",
                         &provider_name,
                         None,
+                        // TUI 退出路径：对齐 Claude Code SessionEnd reason
+                        // 双击 Ctrl+C 退出为 prompt_input_exit，/quit 为 other
+                        Some("prompt_input_exit"),
                     )
                     .await;
                 })

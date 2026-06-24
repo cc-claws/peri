@@ -573,9 +573,27 @@ impl<S: State> Middleware<S> for HookMiddleware {
         _state: &mut S,
         error: &peri_agent::error::AgentError,
     ) -> AgentResult<()> {
-        // 当 agent 因错误退出时触发 StopFailure hook。
-        // 这覆盖了 Interrupted、MaxIterationsExceeded、LLM 调用失败等场景，
-        // 这些路径不经过 after_agent（直接返回 Err），因此需要在此处单独触发。
+        // 按 Claude Code 规范，StopFailure 仅在 API/LLM 错误导致轮次结束时触发。
+        // 其他错误类型（用户中断、最大迭代次数、工具拒绝等）不触发 StopFailure。
+        //
+        // 触发 StopFailure 的变体：
+        // - LlmError / LlmHttpError：LLM 调用失败
+        //
+        // 不触发的变体：
+        // - Interrupted：用户主动 Ctrl+C，非失败
+        // - MaxIterationsExceeded：达到循环上限，非 API 错误
+        // - ToolRejected：HITL 或 hook 拒绝工具，非 API 错误
+        // - ToolNotFound / ToolExecutionFailed：工具层面错误，agent 可继续
+        // - MiddlewareError / SerializationError / Other：非 API 错误
+        let is_api_error = matches!(
+            error,
+            AgentError::LlmError(_) | AgentError::LlmHttpError { .. }
+        );
+        if !is_api_error {
+            return Ok(());
+        }
+
+        // API 错误路径不经过 after_agent（直接返回 Err），需要在此处单独触发 StopFailure。
         let error_description = format!("{:?}", error);
         let input = HookInput {
             session_id: self.session_id.clone(),
@@ -613,6 +631,7 @@ impl<S: State> Middleware<S> for HookMiddleware {
 ///
 /// The HookMiddleware instance is owned by the agent task and not accessible
 /// from these code paths, so we dispatch hooks directly.
+#[allow(clippy::too_many_arguments)]
 pub async fn fire_standalone_lifecycle_hooks(
     registered_hooks: &[RegisteredHook],
     event: HookEvent,
@@ -621,6 +640,7 @@ pub async fn fire_standalone_lifecycle_hooks(
     transcript_path: &str,
     current_model: &str,
     message_count: Option<usize>,
+    source: Option<&str>,
 ) {
     // Filter hooks matching the event
     let matching: Vec<&RegisteredHook> = registered_hooks
@@ -646,7 +666,10 @@ pub async fn fire_standalone_lifecycle_hooks(
             tool_use_id: None,
             tool_output: None,
             prompt: None,
-            source: None,
+            // SessionEnd 的 reason：clear（/clear 新建 thread）、prompt_input_exit（TUI 退出）、
+            // resume（恢复其他会话导致当前会话结束）、other（/quit 等）。
+            // 调用方按场景传值，对齐 Claude Code SessionEnd reason 字段。
+            source: source.map(|s| s.to_string()),
             model: Some(current_model.to_string()),
             subagent_name: None,
             subagent_result: None,

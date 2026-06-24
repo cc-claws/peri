@@ -1,6 +1,6 @@
 # StopFailure 钩子触发范围过宽
 
-**状态**：Open
+**状态**：Fixed
 **优先级**：低
 **创建日期**：2026-06-01
 
@@ -39,3 +39,23 @@ async fn on_error(&self, _state: &mut S, error: &AgentError) -> AgentResult<()> 
 
 - `peri-middlewares/src/hooks/middleware.rs` — `on_error` 方法（line 531-564）
 - `peri-agent/src/error.rs` — `AgentError` 枚举定义
+
+## 状态变更记录
+
+| 日期 | 从 | 到 | 操作人 | 说明 |
+|------|-----|-----|--------|------|
+| 2026-06-01 | — | Open | agent | 创建 |
+| 2026-06-24 | Open | Fixed | agent | Phase 2A 修复，加 AgentError 变体过滤 |
+
+## 修复记录
+
+### 修复 #1（2026-06-24）
+
+- **操作人**：agent（Claude glm-5.2）
+- **用户原意**：StopFailure 应仅在 API/LLM 错误时触发，用户中断和最大迭代次数等不应触发
+- **修复内容**：
+  - `on_error` 加 `is_api_error` 过滤：仅 `AgentError::LlmError` 和 `AgentError::LlmHttpError` 触发 StopFailure
+  - 其他变体（Interrupted / MaxIterationsExceeded / ToolRejected / ToolNotFound / ToolExecutionFailed / MiddlewareError / SerializationError / Other）直接返回，不触发 StopFailure
+  - 补 5 个单元测试覆盖 LlmError/LlmHttpError 触发 + Interrupted/MaxIterationsExceeded/ToolRejected 跳过
+- **涉及 commit**：本 PR（Phase 2）
+- **验证状态**：待验证（单元测试全绿，用户需在真实环境验证 StopFailure 触发范围）
