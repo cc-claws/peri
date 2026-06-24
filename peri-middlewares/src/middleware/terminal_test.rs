@@ -260,3 +260,123 @@ fn test_truncate_output_persists_full_content_on_byte_truncation() {
         "字节截断应包含文件路径: {result}"
     );
 }
+
+// ── extract_quoted_message 测试 ──────────────────────────────────────
+
+#[test]
+fn test_extract_quoted_message_double_quotes() {
+    let (msg, rest) = extract_quoted_message(r#""feat(tui): display version number on welcome page""#);
+    assert_eq!(msg.as_deref(), Some("feat(tui): display version number on welcome page"));
+    assert_eq!(rest, "");
+}
+
+#[test]
+fn test_extract_quoted_message_with_remaining() {
+    let (msg, rest) = extract_quoted_message(r#""my message" --no-verify"#);
+    assert_eq!(msg.as_deref(), Some("my message"));
+    assert_eq!(rest, " --no-verify");
+}
+
+#[test]
+fn test_extract_quoted_message_single_quotes() {
+    let (msg, _) = extract_quoted_message("'hello world'");
+    assert_eq!(msg.as_deref(), Some("hello world"));
+}
+
+#[test]
+fn test_extract_quoted_message_escaped_quote() {
+    let (msg, _) = extract_quoted_message(r#""say \"hello\"""#);
+    assert_eq!(msg.as_deref(), Some(r#"say "hello""#));
+}
+
+#[test]
+fn test_extract_quoted_message_no_quote() {
+    let (msg, rest) = extract_quoted_message("no-quotes here");
+    assert!(msg.is_none());
+    assert_eq!(rest, "no-quotes here");
+}
+
+#[test]
+fn test_extract_quoted_message_empty() {
+    let (msg, rest) = extract_quoted_message("");
+    assert!(msg.is_none());
+    assert_eq!(rest, "");
+}
+
+#[test]
+fn test_extract_quoted_message_unclosed() {
+    let (msg, _) = extract_quoted_message(r#""unclosed message"#);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn test_extract_quoted_message_chinese() {
+    let (msg, _) = extract_quoted_message(r#""feat(tui): 显示版本号""#);
+    assert_eq!(msg.as_deref(), Some("feat(tui): 显示版本号"));
+}
+
+// ── rewrite_git_commit_for_windows 测试（仅 Windows）───────────────
+
+#[cfg(windows)]
+mod windows_git_rewrite {
+    use super::*;
+
+    #[test]
+    fn test_rewrite_simple_commit() {
+        let (cmd, info) =
+            rewrite_git_commit_for_windows(r#"git commit -m "feat(tui): display version""#);
+        assert!(cmd.contains("git commit -F"), "应改写为 -F: {cmd}");
+        assert!(info.is_some(), "应返回临时文件信息");
+        let (path, content) = info.unwrap();
+        assert!(path.ends_with(".txt"), "临时文件应为 .txt: {path}");
+        assert_eq!(content, "feat(tui): display version");
+    }
+
+    #[test]
+    fn test_rewrite_long_flag() {
+        let (cmd, info) =
+            rewrite_git_commit_for_windows(r#"git commit --message "hello world""#);
+        assert!(cmd.contains("git commit -F"), "应改写 --message: {cmd}");
+        assert_eq!(info.unwrap().1, "hello world");
+    }
+
+    #[test]
+    fn test_rewrite_preserves_extra_flags() {
+        let (cmd, _) = rewrite_git_commit_for_windows(
+            r#"git commit -m "msg" --no-verify"#,
+        );
+        assert!(cmd.contains("--no-verify"), "应保留额外标志: {cmd}");
+        assert!(cmd.contains("-F"), "应改写为 -F: {cmd}");
+    }
+
+    #[test]
+    fn test_no_rewrite_without_quotes() {
+        let (cmd, info) = rewrite_git_commit_for_windows("git commit -m msg");
+        assert!(info.is_none(), "无引号时不应重写");
+        assert_eq!(cmd, "git commit -m msg");
+    }
+
+    #[test]
+    fn test_no_rewrite_chained_command() {
+        let input = r#"git add . && git commit -m "msg""#;
+        let (cmd, info) = rewrite_git_commit_for_windows(input);
+        assert!(info.is_none(), "链式命令不应重写");
+        assert_eq!(cmd, input);
+    }
+
+    #[test]
+    fn test_no_rewrite_non_commit() {
+        let input = "git status";
+        let (cmd, info) = rewrite_git_commit_for_windows(input);
+        assert!(info.is_none());
+        assert_eq!(cmd, input);
+    }
+
+    #[test]
+    fn test_no_rewrite_pipe() {
+        let input = r#"git commit -m "msg" | cat"#;
+        let (cmd, info) = rewrite_git_commit_for_windows(input);
+        assert!(info.is_none(), "管道命令不应重写");
+        assert_eq!(cmd, input);
+    }
+}

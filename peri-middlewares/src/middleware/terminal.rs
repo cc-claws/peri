@@ -6,6 +6,113 @@ use tokio::time::{timeout, Duration};
 
 use crate::tools::output_persist::persist_truncated_output;
 
+/// Windows `cmd /C` 会吞掉引号，导致 `git commit -m "msg with spaces"` 中的
+/// message 被空格拆成多个 pathspec。检测到此模式时，将 message 写入临时文件，
+/// 改写为 `git commit -F tempfile`，彻底绕开 cmd.exe 引号解析。
+///
+/// 返回 `(rewritten_command, Option<(temp_file_path, message_content)>)`，
+/// 调用方负责写入文件并执行后清理。
+#[cfg(windows)]
+fn rewrite_git_commit_for_windows(command: &str) -> (String, Option<(String, String)>) {
+    // 只处理简单的 `git commit -m "..."` 或 `git commit --message "..."` 模式
+    // 不处理复杂的 chained 命令（&&、||、| 等），这些原样透传
+    if command.contains("&&") || command.contains("||") || command.contains('|') {
+        return (command.to_string(), None);
+    }
+
+    let trimmed = command.trim();
+
+    // 匹配 git commit 开头（允许 git -C path commit 等变体）
+    let commit_pos = trimmed.find("commit").or_else(|| trimmed.find("COMMIT"));
+    let Some(pos) = commit_pos else {
+        return (command.to_string(), None);
+    };
+    // "commit" 前面必须是 git 相关命令
+    let prefix = &trimmed[..pos];
+    if !prefix.contains("git") && !prefix.ends_with(' ') {
+        return (command.to_string(), None);
+    }
+
+    // 在 commit 之后的部分找 -m 或 --message
+    let after_commit = trimmed[pos + 6..].trim_start(); // "commit".len() = 6
+
+    // 尝试 -m 或 --message
+    let (_flag, flag_len) = if after_commit.starts_with("--message ") {
+        ("--message ", 10)
+    } else if after_commit.starts_with("-m ") {
+        ("-m ", 3)
+    } else if after_commit.starts_with("-m") && after_commit.len() == 2 {
+        // `-m` 是最后一个 token，没有 message
+        return (command.to_string(), None);
+    } else {
+        return (command.to_string(), None);
+    };
+
+    let rest = after_commit[flag_len..].trim_start();
+
+    // 提取引号包裹的 message
+    let (message, remaining) = extract_quoted_message(rest);
+    let Some(msg) = message else {
+        return (command.to_string(), None);
+    };
+
+    // 构造临时文件路径
+    let temp_dir = std::env::temp_dir();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let temp_path = temp_dir.join(format!("peri-commit-msg-{timestamp}.txt"));
+
+    // 重写命令：用 -F tempfile 替换 -m "..."
+    let commit_prefix = &trimmed[..pos + 6]; // 到 "commit" 为止
+    let remaining = remaining.trim();
+    let new_cmd = if remaining.is_empty() {
+        format!("{prefix}{commit_prefix} -F \"{}\"", temp_path.display())
+    } else {
+        format!(
+            "{prefix}{commit_prefix} -F \"{}\" {remaining}",
+            temp_path.display()
+        )
+    };
+
+    (new_cmd, Some((temp_path.to_string_lossy().to_string(), msg)))
+}
+
+/// 从命令字符串中提取引号包裹的 message 内容。
+/// 返回 `(Some(message), remaining_after_quote)` 或 `(None, _)`。
+fn extract_quoted_message(s: &str) -> (Option<String>, &str) {
+    let mut chars = s.chars();
+    let quote_char = match chars.next() {
+        Some(c @ '"') | Some(c @ '\'') => c,
+        _ => return (None, s),
+    };
+    let q_len = quote_char.len_utf8();
+    let rest = &s[q_len..];
+    let mut msg = String::new();
+    let mut char_indices = rest.char_indices().peekable();
+    while let Some((i, c)) = char_indices.next() {
+        if c == '\\' {
+            // 转义引号
+            if let Some(&(_, next_c)) = char_indices.peek() {
+                if next_c == quote_char {
+                    msg.push(quote_char);
+                    char_indices.next(); // consume escaped char
+                    continue;
+                }
+            }
+            msg.push(c);
+        } else if c == quote_char {
+            // 结束引号
+            return (Some(msg), &rest[i + c.len_utf8()..]);
+        } else {
+            msg.push(c);
+        }
+    }
+    // 未找到结束引号
+    (None, s)
+}
+
 /// BashTool - 终端命令执行工具，与 TypeScript TerminalMiddleware 对齐
 const BASH_DESCRIPTION: &str = r#"Executes a given shell command and returns its output.
 
@@ -154,8 +261,20 @@ impl BaseTool for BashTool {
         let _description = input["description"].as_str();
         let _run_in_background = input["run_in_background"].as_bool().unwrap_or(false);
 
+        // Windows: 重写 git commit -m 为 git commit -F，绕开 cmd.exe 引号问题
+        #[cfg(windows)]
+        let (command, temp_msg_file) = {
+            let (cmd, info) = rewrite_git_commit_for_windows(command);
+            if let Some((ref path, ref content)) = info {
+                let _ = std::fs::write(path, content);
+            }
+            (cmd, info.map(|(p, _)| p))
+        };
+        #[cfg(not(windows))]
+        let temp_msg_file: Option<String> = None;
+
         let result = timeout(Duration::from_millis(timeout_ms), {
-            let mut cmd = crate::process::shell_command(command, &[]);
+            let mut cmd = crate::process::shell_command(&command, &[]);
             cmd.current_dir(&self.cwd)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -165,6 +284,11 @@ impl BaseTool for BashTool {
             cmd.output()
         })
         .await;
+
+        // 清理临时文件
+        if let Some(ref path) = temp_msg_file {
+            let _ = tokio::fs::remove_file(path).await;
+        }
 
         match result {
             Err(_) => Err(format!(
