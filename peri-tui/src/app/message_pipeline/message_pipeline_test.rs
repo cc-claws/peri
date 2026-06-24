@@ -1447,20 +1447,17 @@ fn test_edit_tool_end_produces_diff_lines() {
         tail_vms
     );
 
-    if let MessageViewModel::ToolBlock { diff_lines, .. } = edit_block.unwrap() {
+    if let MessageViewModel::ToolBlock { diff_lines, args_display, .. } = edit_block.unwrap() {
         let lines = diff_lines
             .as_ref()
             .expect("Edit 工具应产生 diff_lines（预渲染行）");
         assert!(!lines.is_empty(), "Edit diff 应至少有 1 行渲染输出");
-        // 验证渲染行中包含文件路径
-        let combined: String = lines
-            .iter()
-            .flat_map(|l| l.spans.iter().map(|s| s.content.clone()))
-            .collect();
+        // 文件路径在 args_display 中（header 摘要），不在 diff_lines 中（已去掉标题行避免重复）
+        let args = args_display.as_ref().expect("Edit 工具应有 args_display");
         assert!(
-            combined.contains("/tmp/src/main.rs"),
-            "diff 渲染应包含文件路径，实际: {}",
-            combined
+            args.contains("src/main.rs"),
+            "args_display 应包含文件路径，实际: {}",
+            args
         );
     }
 }
