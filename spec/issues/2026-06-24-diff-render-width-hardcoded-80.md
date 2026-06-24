@@ -1,6 +1,6 @@
 # [BUG] Write/Edit diff 视图宽度硬编码 80，长行被截断
 
-**状态**: Open
+**状态**: Pending
 **优先级**: P1
 **模块**: tui
 **创建时间**: 2026-06-24
@@ -59,3 +59,25 @@ pub fn render_diff(input: &DiffInput, width: usize, theme: &dyn Theme) -> Vec<Li
 ## 验证标准
 
 终端宽度变化后，diff 视图自动重新渲染适配新宽度——长行不再被截断在第 80 列。
+
+## 状态变更记录
+
+| 日期 | 从 | 到 | 操作人 | 说明 |
+|------|-----|-----|--------|------|
+| 2026-06-24 | — | Open | 用户 | 创建 |
+| 2026-06-24 | Open | Pending | agent | 修复 push 到 PR #27，等待用户在真实环境验证 |
+
+## 修复记录
+
+### 修复 #1（2026-06-24）
+
+- **操作人**：agent（Claude glm-5.2）
+- **用户原意**：终端变宽时 Write/Edit 工具的内联 diff（Ctrl+O 切换）应自动适配宽度，长行不再被截断在第 80 列
+- **修复内容**：
+  - `MessageViewModel::ToolBlock` 字段 `diff_lines: Option<Vec<Line>>` → `diff_input: Option<DiffInput>`（VM 持源数据而非预渲染缓存）
+  - `build_diff_lines` → `build_diff_input`，`try_build_diff_lines` → `try_build_diff_input`（去掉硬编码 80 的 render_diff 调用，只构造 DiffInput）
+  - `ui/message_render.rs` detail_mode 分支按 `width.saturating_sub(4)` 实时调 `render_diff`，复用既有 `RenderEvent::Resize` 路径自动响应宽度变化
+  - `renderer.rs` 内 `RENDER_CACHE` 按 (input, width) 做 LRU 兜底，避免重复计算
+- **涉及 commit**：`74814104`（分支 `hotfix#wismyzhizi2018#6月份#T00011_diff-width-hardcoded`）
+- **PR**：https://github.com/wismyzhizi2018/peri/pull/27
+- **验证状态**：待验证（用户需在真实环境按 Ctrl+O 切换 detail_mode 后确认 diff 长行不再截断、resize 时自动重新渲染）

@@ -263,7 +263,7 @@
             is_error: true,
             collapsed: true,
             color: crate::ui::theme::ERROR,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         let lines = render_view_model(&vm, Some(1), 80, false, 0);
@@ -296,7 +296,7 @@
             is_error: false,
             collapsed: true,
             color: crate::ui::theme::SAGE,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         let lines = render_view_model(&vm, Some(1), 80, false, 0);
@@ -317,7 +317,14 @@
             is_error: false,
             collapsed: true,
             color: crate::ui::theme::SAGE,
-            diff_lines: Some(vec![Line::from("+new line")]),
+            diff_input: Some(peri_widgets::DiffInput {
+                file_path: "file.rs".to_string(),
+                old_content: "old line".to_string(),
+                new_content: "new line".to_string(),
+                is_new_file: false,
+                is_deleted_file: false,
+                is_binary: false,
+            }),
             content_hash: 0,
         };
 
@@ -333,17 +340,70 @@
             .join("");
 
         assert!(
-            !normal_text.contains("+new line"),
+            !normal_text.contains("new line"),
             "普通模式不应显示内嵌 diff"
         );
         assert!(
-            detail_text.contains("+new line"),
-            "详细模式应兼容显示内嵌 diff_lines"
+            detail_text.contains("new line"),
+            "详细模式应按当前 width 渲染 diff_input"
         );
         assert!(
             detail_text.contains("  ⎿ "),
             "diff 行应带缩进前缀 `  ⎿ `，实际: {}",
             detail_text
+        );
+    }
+
+    #[test]
+    fn test_tool_block_detail_mode_diff_respects_terminal_width() {
+        // 验证 issue 2026-06-24-diff-render-width-hardcoded-80 的核心修复：
+        // 同一 diff_input 在不同终端 width 下应产生不同的渲染输出。
+        // 旧实现预渲染 width=80 缓存到 VM，width 参数无效；新实现按当前 width 渲染。
+        use crate::app::MessageViewModel;
+        let long_line = "fn really_long_function_name(argument_one: i32, argument_two: String) -> Result<Vec<String>, Box<dyn std::error::Error>>";
+        let vm = MessageViewModel::ToolBlock {
+            tool_name: "Edit".to_string(),
+            tool_call_id: "tc_width".to_string(),
+            display_name: "Edit".to_string(),
+            args_display: Some("file.rs".to_string()),
+            content: "edited".to_string(),
+            is_error: false,
+            collapsed: true,
+            color: crate::ui::theme::SAGE,
+            diff_input: Some(peri_widgets::DiffInput {
+                file_path: "file.rs".to_string(),
+                old_content: String::new(),
+                new_content: long_line.to_string(),
+                is_new_file: true,
+                is_deleted_file: false,
+                is_binary: false,
+            }),
+            content_hash: 0,
+        };
+
+        let wide_lines = render_view_model(&vm, Some(1), 200, true, 0);
+        let narrow_lines = render_view_model(&vm, Some(1), 40, true, 0);
+
+        let wide_text: String = wide_lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        let narrow_text: String = narrow_lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        // wide 渲染下整行内容应完整出现（参数名 argument_one 保留）
+        assert!(
+            wide_text.contains("argument_one"),
+            "宽屏应完整渲染长行（包含参数 argument_one），实际: {}",
+            wide_text
+        );
+        // narrow 渲染下长行被 truncate_to_width 截断，argument_one 不出现
+        assert!(
+            !narrow_text.contains("argument_one"),
+            "窄屏应截断长行（不再硬编码 80），实际: {}",
+            narrow_text
         );
     }
 
@@ -363,7 +423,7 @@
             is_error: false,
             collapsed: false,
             color: crate::ui::theme::SAGE,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
 
@@ -642,7 +702,7 @@
             is_error: false,
             collapsed: true,
             color: crate::ui::theme::BASH_BORDER,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         let lines = render_view_model(&vm, Some(1), 80, false, 0);
@@ -668,7 +728,7 @@
             is_error: false,
             collapsed: true,
             color: crate::ui::theme::BASH_BORDER,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         let lines = render_view_model(&vm, Some(1), 80, false, 0);
@@ -694,7 +754,7 @@
             is_error: false,
             collapsed: true,
             color: crate::ui::theme::SAGE,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         let lines = render_view_model(&vm, Some(1), 80, false, 0);

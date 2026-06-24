@@ -1402,11 +1402,11 @@ fn test_no_duplicate_subagent_state_on_tool_start_plus_subagent_start() {
     );
 }
 
-// ─── diff_lines 集成测试 ──────────────────────────────────────────────────
+// ─── diff_input 集成测试 ──────────────────────────────────────────────────
 
-/// 测试：Edit 工具的 ToolEnd 产生 diff_lines（old_content/new_content/file_path）
+/// 测试：Edit 工具的 ToolEnd 产生 diff_input（old_content/new_content/file_path）
 #[test]
-fn test_edit_tool_end_produces_diff_lines() {
+fn test_edit_tool_end_produces_diff_input() {
     let mut pipeline = MessagePipeline::new("/tmp".to_string());
 
     // Arrange：发送 AssistantChunk + ToolStart + ToolEnd
@@ -1437,7 +1437,7 @@ fn test_edit_tool_end_produces_diff_lines() {
     // Act：build_tail_vms 从 completed_tools 构建 ToolBlock
     let tail_vms = pipeline.build_tail_vms();
 
-    // Assert：找到 Edit ToolBlock，验证 diff_lines 有值且内容正确
+    // Assert：找到 Edit ToolBlock，验证 diff_input 有值且字段正确
     let edit_block = tail_vms.iter().find(
         |vm| matches!(vm, MessageViewModel::ToolBlock { tool_name, .. } if tool_name == "Edit"),
     );
@@ -1447,12 +1447,15 @@ fn test_edit_tool_end_produces_diff_lines() {
         tail_vms
     );
 
-    if let MessageViewModel::ToolBlock { diff_lines, args_display, .. } = edit_block.unwrap() {
-        let lines = diff_lines
+    if let MessageViewModel::ToolBlock { diff_input, args_display, .. } = edit_block.unwrap() {
+        let input = diff_input
             .as_ref()
-            .expect("Edit 工具应产生 diff_lines（预渲染行）");
-        assert!(!lines.is_empty(), "Edit diff 应至少有 1 行渲染输出");
-        // 文件路径在 args_display 中（header 摘要），不在 diff_lines 中（已去掉标题行避免重复）
+            .expect("Edit 工具应产生 diff_input（供渲染时按 width 计算）");
+        assert_eq!(input.file_path, "/tmp/src/main.rs");
+        assert_eq!(input.old_content, "fn old() {}");
+        assert_eq!(input.new_content, "fn new() {}");
+        assert!(!input.is_new_file);
+        // 文件路径在 args_display 中（header 摘要），实际 diff 渲染时再去掉标题行避免重复
         let args = args_display.as_ref().expect("Edit 工具应有 args_display");
         assert!(
             args.contains("src/main.rs"),
@@ -1462,9 +1465,9 @@ fn test_edit_tool_end_produces_diff_lines() {
     }
 }
 
-/// 测试：非 Edit/Write 工具不产生 diff_lines
+/// 测试：非 Edit/Write 工具不产生 diff_input
 #[test]
-fn test_non_edit_tool_no_diff_lines() {
+fn test_non_edit_tool_no_diff_input() {
     let mut pipeline = MessagePipeline::new("/tmp".to_string());
 
     // Arrange：发送 Bash 工具的 ToolStart + ToolEnd
@@ -1487,24 +1490,24 @@ fn test_non_edit_tool_no_diff_lines() {
     // Act
     let tail_vms = pipeline.build_tail_vms();
 
-    // Assert：Bash ToolBlock 的 diff_lines 应为 None
+    // Assert：Bash ToolBlock 的 diff_input 应为 None
     let bash_block = tail_vms.iter().find(
         |vm| matches!(vm, MessageViewModel::ToolBlock { tool_name, .. } if tool_name == "Bash"),
     );
     assert!(bash_block.is_some(), "应包含 Bash ToolBlock");
 
-    if let MessageViewModel::ToolBlock { diff_lines, .. } = bash_block.unwrap() {
+    if let MessageViewModel::ToolBlock { diff_input, .. } = bash_block.unwrap() {
         assert!(
-            diff_lines.is_none(),
-            "Bash 工具不应产生 diff_lines，实际: {:?}",
-            diff_lines
+            diff_input.is_none(),
+            "Bash 工具不应产生 diff_input，实际: {:?}",
+            diff_input
         );
     }
 }
 
-/// 测试：is_error=true 的 ToolEnd 不产生 diff_lines（即使工具名是 Edit）
+/// 测试：is_error=true 的 ToolEnd 不产生 diff_input（即使工具名是 Edit）
 #[test]
-fn test_error_tool_end_no_diff_lines() {
+fn test_error_tool_end_no_diff_input() {
     let mut pipeline = MessagePipeline::new("/tmp".to_string());
 
     // Arrange：Edit 工具执行失败
@@ -1531,17 +1534,17 @@ fn test_error_tool_end_no_diff_lines() {
     // Act
     let tail_vms = pipeline.build_tail_vms();
 
-    // Assert：错误 ToolBlock 的 diff_lines 应为 None
+    // Assert：错误 ToolBlock 的 diff_input 应为 None
     let err_block = tail_vms.iter().find(|vm| {
         matches!(vm, MessageViewModel::ToolBlock { tool_name, is_error, .. } if tool_name == "Edit" && *is_error)
     });
     assert!(err_block.is_some(), "应包含 Edit 错误 ToolBlock");
 
-    if let MessageViewModel::ToolBlock { diff_lines, .. } = err_block.unwrap() {
+    if let MessageViewModel::ToolBlock { diff_input, .. } = err_block.unwrap() {
         assert!(
-            diff_lines.is_none(),
-            "错误 ToolEnd 不应产生 diff_lines，实际: {:?}",
-            diff_lines
+            diff_input.is_none(),
+            "错误 ToolEnd 不应产生 diff_input，实际: {:?}",
+            diff_input
         );
     }
 }

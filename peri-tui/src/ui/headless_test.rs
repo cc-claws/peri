@@ -1098,7 +1098,7 @@ async fn test_tool_call_widget_renders_completed() {
         color: crate::ui::theme::SAGE,
         is_error: false,
         collapsed: false,
-        diff_lines: None,
+        diff_input: None,
         content_hash: 0,
     };
 

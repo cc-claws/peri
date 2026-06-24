@@ -274,7 +274,7 @@ fn render_effort_phase(
             ),
             Span::styled(format!("{:<2} {:<6}", num, key), style),
             Span::styled(format!(" {} ", check), check_style),
-            Span::styled(format!("{}", desc), desc_style),
+            Span::styled(desc.to_string(), desc_style),
         ]));
     }
 

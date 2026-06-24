@@ -631,7 +631,7 @@ pub fn render_view_model(
             color: _color,
             is_error,
             tool_name,
-            diff_lines,
+            diff_input,
             ..
         } => {
             // AskUserQuestion 专用渲染路径
@@ -758,8 +758,19 @@ pub fn render_view_model(
                 }
             }
             if detail_mode {
-                if let Some(ref cached_lines) = diff_lines {
-                    for (i, line) in cached_lines.iter().enumerate() {
+                if let Some(ref diff_input) = diff_input {
+                    // 前缀 "  ⎿ " / "    " 占 4 列，diff 内容宽度需减去前缀
+                    let diff_width = width.saturating_sub(4);
+                    let mut rendered = peri_widgets::diff::render_diff(
+                        diff_input,
+                        diff_width,
+                        &peri_widgets::DarkTheme,
+                    );
+                    // 去掉 diff 标题行（file_path），header 的 args_display 已经显示了文件路径
+                    if !rendered.is_empty() {
+                        rendered.remove(0);
+                    }
+                    for (i, line) in rendered.iter().enumerate() {
                         let mut prefixed = line.clone();
                         let prefix = if i == 0 { "  ⎿ " } else { "    " };
                         prefixed.spans.insert(

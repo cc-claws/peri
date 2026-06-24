@@ -12,12 +12,13 @@ pub use crate::ui::message_view::aggregate_batch_groups;
 
 use super::MessagePipeline;
 
-/// 从工具名和入参构造预渲染的 diff 行（仅 Write/Edit 工具）
-fn try_build_diff_lines(
+/// 从工具名和入参构造 DiffInput（仅 Write/Edit 工具）。
+/// 实际的 `render_diff` 渲染由 message_render 在 detail_mode 下按当前终端 width 进行。
+fn try_build_diff_input(
     name: &str,
     input: &serde_json::Value,
-) -> Option<Vec<ratatui::text::Line<'static>>> {
-    let diff_input = match name {
+) -> Option<peri_widgets::DiffInput> {
+    match name {
         "Edit" => {
             let old_string = input
                 .get("old_string")
@@ -62,12 +63,6 @@ fn try_build_diff_lines(
             })
         }
         _ => None,
-    }?;
-    let lines = peri_widgets::diff::render_diff(&diff_input, 80, &peri_widgets::DarkTheme);
-    if lines.is_empty() {
-        None
-    } else {
-        Some(lines)
     }
 }
 
@@ -237,8 +232,8 @@ impl MessagePipeline {
         for ct in &self.completed_tools {
             let display = tool_display::format_tool_name(&ct.name);
             let args = tool_display::format_tool_args(&ct.name, &ct.input, Some(&self.cwd));
-            let diff_lines = if !ct.is_error {
-                try_build_diff_lines(&ct.name, &ct.input)
+            let diff_input = if !ct.is_error {
+                try_build_diff_input(&ct.name, &ct.input)
             } else {
                 None
             };
@@ -255,7 +250,7 @@ impl MessagePipeline {
                 } else {
                     tool_color(&ct.name)
                 },
-                diff_lines,
+                diff_input,
                 content_hash: 0,
             };
             vm.recompute_hash();

@@ -93,6 +93,9 @@ fn rewrite_git_commit_for_windows(command: &str) -> (String, Option<(String, Str
 
 /// 从命令字符串中提取引号包裹的 message 内容。
 /// 返回 `(Some(message), remaining_after_quote)` 或 `(None, _)`。
+/// 仅在 Windows 上由 `rewrite_git_commit_for_windows` 调用，
+/// 非 Windows 编译保留以供单元测试覆盖。
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_quoted_message(s: &str) -> (Option<String>, &str) {
     let mut chars = s.chars();
     let quote_char = match chars.next() {
@@ -286,7 +289,13 @@ impl BaseTool for BashTool {
         let temp_msg_file: Option<String> = None;
 
         let result = timeout(Duration::from_millis(timeout_ms), {
-            let mut cmd = crate::process::shell_command(&command, &[]);
+            // Windows 分支中 `command` 被 shadow 为 String（L278），需要取引用；
+            // 非 Windows 上 `command` 本身就是 &str，直接传递。
+            #[cfg(windows)]
+            let command_arg: &str = &command;
+            #[cfg(not(windows))]
+            let command_arg: &str = command;
+            let mut cmd = crate::process::shell_command(command_arg, &[]);
             cmd.current_dir(&self.cwd)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

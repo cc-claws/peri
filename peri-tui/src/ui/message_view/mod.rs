@@ -4,7 +4,7 @@ use crate::ui::theme;
 use peri_agent::messages::{BaseMessage, ContentBlock};
 use ratatui::{
     style::Color,
-    text::{Line, Text},
+    text::Text,
 };
 
 use super::markdown::parse_markdown_default;
@@ -19,9 +19,10 @@ pub(crate) use tools::parse_subagent_tool_count;
 pub use tools::{tool_color, AgentSummary, ToolCategory, ToolEntry};
 pub(crate) use utils::{instance_hash, parse_bg_hash};
 
-/// 从工具名和入参构造预渲染的 diff 行（仅 Write/Edit 工具）
-fn build_diff_lines(name: &str, input: &serde_json::Value) -> Option<Vec<Line<'static>>> {
-    let diff_input = match name {
+/// 从工具名和入参构造 DiffInput（仅 Write/Edit 工具）。
+/// 实际的 `render_diff` 渲染由 message_render 在 detail_mode 下按当前终端 width 进行。
+fn build_diff_input(name: &str, input: &serde_json::Value) -> Option<peri_widgets::DiffInput> {
+    match name {
         "Edit" => {
             let old_string = input
                 .get("old_string")
@@ -66,16 +67,6 @@ fn build_diff_lines(name: &str, input: &serde_json::Value) -> Option<Vec<Line<'s
             })
         }
         _ => None,
-    }?;
-    let mut lines = peri_widgets::diff::render_diff(&diff_input, 80, &peri_widgets::DarkTheme);
-    // 去掉 diff 标题行（file_path），header 的 args_display 已经显示了文件路径
-    if !lines.is_empty() {
-        lines.remove(0);
-    }
-    if lines.is_empty() {
-        None
-    } else {
-        Some(lines)
     }
 }
 
@@ -115,8 +106,8 @@ pub enum MessageViewModel {
         is_error: bool,
         collapsed: bool,
         color: Color,
-        /// 内嵌 diff 视图（Write/Edit 工具执行成功后填充，预渲染缓存）
-        diff_lines: Option<Vec<Line<'static>>>,
+        /// 内嵌 diff 视图输入（Write/Edit 工具执行成功后填充，由 render_thread 按当前 width 渲染）
+        diff_input: Option<peri_widgets::DiffInput>,
         /// 预计算的语义 hash（构造/变更时更新，rebuild 直接读取避免重算）
         content_hash: u64,
     },
@@ -212,7 +203,7 @@ impl PartialEq for MessageViewModel {
                     args_display: a_args,
                     content: a_content,
                     is_error: a_err,
-                    diff_lines: a_diff,
+                    diff_input: a_diff,
                     ..
                 },
                 MessageViewModel::ToolBlock {
@@ -221,7 +212,7 @@ impl PartialEq for MessageViewModel {
                     args_display: b_args,
                     content: b_content,
                     is_error: b_err,
-                    diff_lines: b_diff,
+                    diff_input: b_diff,
                     ..
                 },
             ) => {
@@ -359,7 +350,7 @@ impl Hash for MessageViewModel {
                 content,
                 is_error,
                 collapsed,
-                diff_lines,
+                diff_input,
                 ..
             } => {
                 2u8.hash(state);
@@ -370,7 +361,7 @@ impl Hash for MessageViewModel {
                 content.hash(state);
                 is_error.hash(state);
                 collapsed.hash(state);
-                diff_lines.hash(state);
+                diff_input.hash(state);
             }
             MessageViewModel::ShellCommand {
                 id,
@@ -741,11 +732,11 @@ impl MessageViewModel {
                 } else {
                     tool_color(&tool_name)
                 };
-                // diff_lines：从工具入参构造（仅成功的 Write/Edit）
-                let diff_lines = if *is_error {
+                // diff_input：从工具入参构造（仅成功的 Write/Edit），实际渲染由 message_render 按当前 width 完成
+                let diff_input = if *is_error {
                     None
                 } else {
-                    build_diff_lines(&tool_name, &input)
+                    build_diff_input(&tool_name, &input)
                 };
                 let mut vm = MessageViewModel::ToolBlock {
                     tool_name,
@@ -756,7 +747,7 @@ impl MessageViewModel {
                     is_error: *is_error,
                     collapsed: true,
                     color,
-                    diff_lines,
+                    diff_input,
                     content_hash: 0,
                 };
                 vm.recompute_hash();
@@ -913,7 +904,7 @@ impl MessageViewModel {
             is_error,
             collapsed: true,
             color,
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         vm.recompute_hash();

@@ -138,7 +138,7 @@ impl MessagePipeline {
             is_error: false,
             collapsed: true,
             color: tool_color(name),
-            diff_lines: None,
+            diff_input: None,
             content_hash: 0,
         };
         vm.recompute_hash();
