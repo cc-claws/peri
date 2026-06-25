@@ -43,6 +43,7 @@ impl App {
             .unwrap_or(true);
         let should_warn = should_check
             && has_cache_data
+            && rate > 0.0
             && rate < 0.8
             && runtime_long_enough
             && self
