@@ -169,6 +169,17 @@ impl Reasoning {
     pub fn needs_tool_call(&self) -> bool {
         !self.tool_calls.is_empty()
     }
+
+    /// 判断推理结果是否为空（无 tool_calls 且 final_answer/thought 均为空字符串）
+    pub fn is_empty_response(&self) -> bool {
+        !self.needs_tool_call()
+            && self
+                .final_answer
+                .as_deref()
+                .unwrap_or(&self.thought)
+                .trim()
+                .is_empty()
+    }
 }
 
 /// ReAct LLM trait

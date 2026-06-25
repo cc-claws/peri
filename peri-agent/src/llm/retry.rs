@@ -108,6 +108,23 @@ impl<L: ReactLLM> ReactLLM for RetryableLLM<L> {
                 .generate_reasoning(messages, tools, retry_streaming)
                 .await
             {
+                Ok(r) if r.is_empty_response() => {
+                    // 空回答视为可重试异常（LLM 返回了 HTTP 200 但内容为空）
+                    let delay = self.config.exponential_delay(attempt);
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        max_retries = self.config.max_retries,
+                        delay_ms = delay,
+                        "LLM 返回空回答（无 tool_calls 且内容为空），准备重试"
+                    );
+                    self.emit(AgentEvent::LlmRetrying {
+                        attempt: attempt + 1,
+                        max_attempts: self.config.max_retries,
+                        delay_ms: delay,
+                        error: "LLM 返回空回答（无 tool_calls 且内容为空）".to_string(),
+                    });
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
                 Ok(r) => return Ok(r),
                 Err(e) if e.is_retryable() => {
                     let delay = self.config.exponential_delay(attempt);
@@ -130,7 +147,21 @@ impl<L: ReactLLM> ReactLLM for RetryableLLM<L> {
             }
         }
         // 最终尝试（不重试），直接返回结果或错误（重试已耗尽，传 None 避免双重发射）
-        self.inner.generate_reasoning(messages, tools, None).await
+        let final_result = self.inner.generate_reasoning(messages, tools, None).await;
+        // 重试耗尽后仍为空回答，返回错误走标准错误路径（TUI 显示错误块）
+        if let Ok(ref r) = final_result {
+            if r.is_empty_response() {
+                tracing::error!(
+                    max_retries = self.config.max_retries,
+                    "LLM 连续返回空回答，重试次数已耗尽"
+                );
+                return Err(crate::error::AgentError::LlmError(format!(
+                    "LLM 连续返回 {} 次空回答（无 tool_calls 且内容为空），可能是模型服务异常",
+                    self.config.max_retries
+                )));
+            }
+        }
+        final_result
     }
 
     fn model_name(&self) -> String {
