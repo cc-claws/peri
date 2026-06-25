@@ -63,7 +63,7 @@ pub(super) fn handle_panels(app: &mut App, input: &Input) -> Option<Action> {
         return Some(Action::Redraw);
     }
 
-    // Global panels: Status, Memory, Mcp, Cron, Plugin
+    // Global panels: Status, Memory, Mcp, Cron, Plugin, Tasks
     let global_kind = app.global_panels.active_kind();
     if matches!(
         global_kind,
@@ -72,6 +72,7 @@ pub(super) fn handle_panels(app: &mut App, input: &Input) -> Option<Action> {
             | Some(PanelKind::Mcp)
             | Some(PanelKind::Cron)
             | Some(PanelKind::Plugin)
+            | Some(PanelKind::Tasks)
     ) {
         let result = with_global_panels!(app, |pm, ctx| {
             let result = pm.dispatch_key(input.clone(), &mut ctx);

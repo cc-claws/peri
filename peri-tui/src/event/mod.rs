@@ -339,7 +339,7 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
 
             // ─── PanelManager paste dispatch ────────────────────────────
             {
-                // Session panels: Model, Agent, Hooks, Login, Config, ThreadBrowser
+                // Session panels: Model, Agent, Hooks, Login, Config, ThreadBrowser, CommandPalette
                 let session_kind = app.session_mgr.current_mut().session_panels.active_kind();
                 if matches!(
                     session_kind,
@@ -349,12 +349,13 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                         | Some(PanelKind::Login)
                         | Some(PanelKind::Config)
                         | Some(PanelKind::ThreadBrowser)
+                        | Some(PanelKind::CommandPalette)
                 ) {
                     with_session_panels!(app, |sp, ctx| sp.dispatch_paste(&text, &mut ctx));
                     return Ok(Some(Action::Redraw));
                 }
 
-                // Global panels: Status, Memory, Mcp, Cron, Plugin
+                // Global panels: Status, Memory, Mcp, Cron, Plugin, Tasks
                 let global_kind = app.global_panels.active_kind();
                 if matches!(
                     global_kind,
@@ -363,6 +364,7 @@ async fn handle_event(app: &mut App, ev: Event) -> Result<Option<Action>> {
                         | Some(PanelKind::Mcp)
                         | Some(PanelKind::Cron)
                         | Some(PanelKind::Plugin)
+                        | Some(PanelKind::Tasks)
                 ) {
                     with_global_panels!(app, |pm, ctx| pm.dispatch_paste(&text, &mut ctx));
                     return Ok(Some(Action::Redraw));
